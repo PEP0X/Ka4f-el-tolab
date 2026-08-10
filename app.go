@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,12 +12,13 @@ import (
 	"Ka4f-El-Tolab/internal/nid"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // App struct
 type App struct {
 	ctx context.Context
-	db  *sql.DB
+	db  *gorm.DB
 }
 
 // NewApp creates a new App application struct
@@ -39,11 +39,11 @@ func (a *App) startup(ctx context.Context) {
 
 	db, err := database.InitDB(dbPath)
 	if err != nil {
-		fmt.Printf("Error initializing database at %s: %v\n", dbPath, err)
+		fmt.Printf("Error initializing GORM database at %s: %v\n", dbPath, err)
 		return
 	}
 	a.db = db
-	fmt.Printf("Database initialized successfully at: %s\n", dbPath)
+	fmt.Printf("GORM Database initialized successfully at: %s\n", dbPath)
 }
 
 // GetStudents fetches students filtered by stage and search query
@@ -62,7 +62,7 @@ func (a *App) GetStageCounts() (map[string]int, error) {
 	return database.GetStageCounts(a.db)
 }
 
-// AddStudent saves or updates a student record
+// AddStudent saves or updates a student record using GORM
 func (a *App) AddStudent(s models.Student) (models.Student, error) {
 	if a.db == nil {
 		return s, fmt.Errorf("database not initialized")
