@@ -1,0 +1,32 @@
+# Build binaries and outputs
+build/bin/
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Node dependencies and build artifacts
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# OS / Editor generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.swp
+*.swo
+
+# Local database test files
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Reference clone repository
+National-Id-REPO/
