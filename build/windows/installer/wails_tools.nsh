@@ -8,7 +8,7 @@
     !define INFO_PROJECTNAME "Ka4f-El-Tolab"
 !endif
 !ifndef INFO_COMPANYNAME
-    !define INFO_COMPANYNAME "Saint Demiana Church"
+    !define INFO_COMPANYNAME "Abanoub Nashaat"
 !endif
 !ifndef INFO_PRODUCTNAME
     !define INFO_PRODUCTNAME "Ka4f El Tolab"
