@@ -57,20 +57,23 @@ export const CONFIDENCE_AUTO = 0.85;
 /** Compare which fields differ between two students for the update tab. */
 export const COMPARABLE_FIELDS: { key: keyof Student; label: string }[] = [
   { key: 'fullName', label: 'الاسم الرباعي' },
+  { key: 'familyHead', label: 'اسم رب الأسرة' },
   { key: 'nationalId', label: 'الرقم القومي' },
   { key: 'gender', label: 'النوع' },
   { key: 'birthDate', label: 'تاريخ الميلاد' },
   { key: 'governorate', label: 'المحافظة' },
-  { key: 'phone', label: 'هاتف الطالب' },
+  { key: 'phone', label: 'رقم التليفون' },
   { key: 'parentPhone', label: 'هاتف ولي الأمر' },
   { key: 'address', label: 'العنوان' },
   { key: 'stage', label: 'المرحلة' },
   { key: 'grade', label: 'الصف' },
+  { key: 'schoolName', label: 'اسم المدرسة' },
   { key: 'track', label: 'المسار' },
   { key: 'universityName', label: 'الجامعة' },
   { key: 'faculty', label: 'الكلية' },
   { key: 'studyYears', label: 'عدد سنوات الدراسة' },
   { key: 'universityYear', label: 'الفرقة' },
+  { key: 'churchFamilyId', label: 'رقم الأسرة بكشوفات الكنيسة' },
   { key: 'cathedralStudentId', label: 'رقم الطالب في برنامج الرعاية الكنسية' },
   { key: 'cathedralFamilyId', label: 'رقم الأسرة في برنامج الرعاية الكنسية' },
   { key: 'alexandriaStudentId', label: 'رقم الطالب بالعضوية الكنسية' },
@@ -197,7 +200,7 @@ export function detectFamilyClusters(
       phoneGroups.set(parentPhone, list);
     }
 
-    const famId = (r.student.alexandriaFamilyId || r.student.cathedralFamilyId || '').trim();
+    const famId = (r.student.churchFamilyId || r.student.alexandriaFamilyId || r.student.cathedralFamilyId || '').trim();
     if (famId.length >= 2) {
       const list = familyIdGroups.get(famId) || [];
       list.push(r.id);

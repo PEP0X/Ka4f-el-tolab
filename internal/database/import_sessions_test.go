@@ -1,6 +1,7 @@
 package database
 
 import (
+	"database/sql"
 	"encoding/json"
 	"path/filepath"
 	"testing"
@@ -10,10 +11,9 @@ import (
 	"Ka4f-El-Tolab/internal/repository"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
-func setupTestDB(t *testing.T) *gorm.DB {
+func setupTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	paths := config.Paths{DBPath: filepath.Join(t.TempDir(), "test.db")}
 	db, err := Open(paths)
@@ -23,6 +23,9 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	if err := Migrate(db); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
 	return db
 }
 
@@ -31,6 +34,8 @@ func setupTestDB(t *testing.T) *gorm.DB {
 // while every other row becomes a pending import row that survives a restart.
 func TestCreateImportSessionImportsCleanRowsAndPersistsPendingRows(t *testing.T) {
 	db := setupTestDB(t)
+	studentRepo := repository.NewStudentRepository(db)
+	importRepo := repository.NewImportSessionRepository(db)
 
 	preview := models.ImportPreview{
 		SessionID:      uuid.NewString(),
@@ -72,7 +77,7 @@ func TestCreateImportSessionImportsCleanRowsAndPersistsPendingRows(t *testing.T)
 	}
 	preview.Recalculate()
 
-	session, result, err := CreateImportSession(db, preview)
+	session, result, err := importRepo.CreateSession(preview, studentRepo.ImportBatch)
 	if err != nil {
 		t.Fatalf("CreateImportSession failed: %v", err)
 	}
@@ -83,7 +88,7 @@ func TestCreateImportSessionImportsCleanRowsAndPersistsPendingRows(t *testing.T)
 		t.Fatalf("expected 1 inserted clean row, got %d", result.Inserted)
 	}
 
-	pending, err := GetPendingImportRows(db, session.ID)
+	pending, err := importRepo.GetPendingRows(session.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,6 +107,7 @@ func TestCreateImportSessionImportsCleanRowsAndPersistsPendingRows(t *testing.T)
 // a full ImportRow keeps the Go-only metadata (group_key, confidence) intact.
 func TestSavePendingImportRowPreservesMetadata(t *testing.T) {
 	db := setupTestDB(t)
+	importRepo := repository.NewImportSessionRepository(db)
 
 	rowID := uuid.NewString()
 	original := models.ImportRow{
@@ -121,22 +127,18 @@ func TestSavePendingImportRowPreservesMetadata(t *testing.T) {
 		},
 	}
 	payload, _ := json.Marshal(original)
-	session := models.ImportSession{ID: uuid.NewString(), SourceFilename: "t.xlsx"}
-	if err := db.Create(&session).Error; err != nil {
+	sessionID := uuid.NewString()
+	if _, err := db.Exec(
+		"INSERT INTO import_sessions (id, source_filename, total_rows, imported_count, initial_pending_count, pending_count, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		sessionID, "t.xlsx", 1, 0, 1, 1, models.ImportSessionActive,
+	); err != nil {
 		t.Fatal(err)
 	}
-	pending := models.PendingImportRow{
-		ID:                   rowID,
-		SessionID:            session.ID,
-		Stage:                "ابتدائي",
-		IssueType:            "needs_review",
-		RawData:              string(payload),
-		GroupKey:             "اولي ابتدائي",
-		SuggestedValue:       "الصف الأول الابتدائي",
-		SuggestionConfidence: 0.91,
-		Status:               models.PendingRowPending,
-	}
-	if err := db.Create(&pending).Error; err != nil {
+
+	if _, err := db.Exec(
+		"INSERT INTO pending_import_rows (id, session_id, stage, issue_type, raw_data, group_key, suggested_value, suggestion_confidence, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		rowID, sessionID, "ابتدائي", "needs_review", string(payload), "اولي ابتدائي", "الصف الأول الابتدائي", 0.91, models.PendingRowPending,
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -144,16 +146,16 @@ func TestSavePendingImportRowPreservesMetadata(t *testing.T) {
 	// the full ImportRow payload (including metadata).
 	updated := original
 	updated.Student.FullName = "طالب محدث"
-	if err := SavePendingImportRow(db, rowID, updated); err != nil {
+	if err := importRepo.SavePendingRow(rowID, updated); err != nil {
 		t.Fatal(err)
 	}
 
-	var stored models.PendingImportRow
-	if err := db.First(&stored, "id = ?", rowID).Error; err != nil {
+	var rawData string
+	if err := db.QueryRow("SELECT raw_data FROM pending_import_rows WHERE id = ?", rowID).Scan(&rawData); err != nil {
 		t.Fatal(err)
 	}
 	var decoded models.ImportRow
-	if err := json.Unmarshal([]byte(stored.RawData), &decoded); err != nil {
+	if err := json.Unmarshal([]byte(rawData), &decoded); err != nil {
 		t.Fatal(err)
 	}
 	if decoded.Student.FullName != "طالب محدث" {
@@ -177,29 +179,27 @@ func TestDeleteAllDataWipesAllTables(t *testing.T) {
 		NationalID: "30508240101594",
 		Stage:      "ابتدائي",
 	}
-	if err := db.Create(&student).Error; err != nil {
+	studentRepo := repository.NewStudentRepository(db)
+	if err := studentRepo.Save(&student); err != nil {
 		t.Fatal(err)
 	}
 
-	session := models.ImportSession{
-		ID:             uuid.NewString(),
-		SourceFilename: "test.xlsx",
-	}
-	if err := db.Create(&session).Error; err != nil {
+	sessionID := uuid.NewString()
+	if _, err := db.Exec(
+		"INSERT INTO import_sessions (id, source_filename, total_rows, imported_count, initial_pending_count, pending_count, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		sessionID, "test.xlsx", 1, 0, 1, 1, models.ImportSessionActive,
+	); err != nil {
 		t.Fatal(err)
 	}
 
-	pending := models.PendingImportRow{
-		ID:        uuid.NewString(),
-		SessionID: session.ID,
-		Stage:     "ابتدائي",
-	}
-	if err := db.Create(&pending).Error; err != nil {
+	if _, err := db.Exec(
+		"INSERT INTO pending_import_rows (id, session_id, stage) VALUES (?, ?, ?)",
+		uuid.NewString(), sessionID, "ابتدائي",
+	); err != nil {
 		t.Fatal(err)
 	}
 
 	// Wipe all
-	studentRepo := repository.NewStudentRepository(db)
 	importRepo := repository.NewImportSessionRepository(db)
 	if err := studentRepo.DeleteAll(); err != nil {
 		t.Fatalf("Student DeleteAll failed: %v", err)
@@ -209,9 +209,9 @@ func TestDeleteAllDataWipesAllTables(t *testing.T) {
 	}
 
 	var studentCount, sessionCount, pendingCount int64
-	db.Model(&models.Student{}).Count(&studentCount)
-	db.Model(&models.ImportSession{}).Count(&sessionCount)
-	db.Model(&models.PendingImportRow{}).Count(&pendingCount)
+	_ = db.QueryRow("SELECT COUNT(*) FROM students").Scan(&studentCount)
+	_ = db.QueryRow("SELECT COUNT(*) FROM import_sessions").Scan(&sessionCount)
+	_ = db.QueryRow("SELECT COUNT(*) FROM pending_import_rows").Scan(&pendingCount)
 
 	if studentCount != 0 || sessionCount != 0 || pendingCount != 0 {
 		t.Fatalf("expected all counts to be 0, got students=%d, sessions=%d, pending=%d", studentCount, sessionCount, pendingCount)

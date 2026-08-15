@@ -70,7 +70,7 @@
 ## 🏗️ البنية التقنية | Tech Stack
 
 - **Backend / Core Engine**: [Go 1.24+](https://go.dev/) + [Wails v2](https://wails.io/)
-- **Database Layer**: [GORM](https://gorm.io/) + [Pure-Go SQLite (Glebarez)](https://github.com/glebarez/sqlite) with WAL mode
+- **Database Layer**: [database/sql](https://pkg.go.dev/database/sql) + [Pure-Go SQLite (modernc)](https://gitlab.com/cznic/sqlite) with WAL mode
 - **Excel Processing**: [Excelize v2](https://github.com/xuri/excelize)
 - **Frontend Framework**: [React 18](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/) + [Vite](https://vitejs.dev/)
 - **State Management**: [Zustand](https://github.com/pmndrs/zustand)

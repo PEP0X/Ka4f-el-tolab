@@ -19,14 +19,18 @@ func main() {
 
 	// Create application with custom seamless title bar options
 	err := wails.Run(&options.App{
-		Title:  "كشف الطلاب - Ka4f El-Tolab",
-		Width:  1280,
-		Height: 800,
+		Title:     "كشف الطلاب - Ka4f El-Tolab",
+		Width:     1280,
+		Height:    800,
+		MinWidth:  450,
+		MinHeight: 400,
+		Frameless: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 248, G: 250, B: 252, A: 1},
 		OnStartup:        app.startup,
+		OnShutdown:       app.shutdown,
 		Bind: []interface{}{
 			app,
 		},
@@ -41,9 +45,10 @@ func main() {
 			},
 		},
 		Windows: &windows.Options{
-			WebviewIsTransparent: false,
-			WindowIsTranslucent:  false,
-			DisableWindowIcon:    false,
+			WebviewIsTransparent:              false,
+			WindowIsTranslucent:               false,
+			DisableWindowIcon:                 false,
+			DisableFramelessWindowDecorations: false,
 		},
 	})
 

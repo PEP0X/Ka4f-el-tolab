@@ -3,32 +3,70 @@
 package service
 
 import (
+	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
+	"sync"
 
 	"Ka4f-El-Tolab/internal/database"
 	"Ka4f-El-Tolab/internal/models"
 	"Ka4f-El-Tolab/internal/repository"
-
-	"gorm.io/gorm"
 )
 
-// StudentService orchestrates student operations.
+// StudentService orchestrates student operations with high-performance in-memory caching.
 type StudentService struct {
-	repo   *repository.StudentRepository
-	db     *gorm.DB
+	repo *repository.StudentRepository
+	db   *sql.DB
+
+	mu          sync.RWMutex
+	listCache   map[string][]models.Student
+	countsCache map[string]int
+	churchCache string
 }
 
-func NewStudentService(db *gorm.DB) *StudentService {
+func NewStudentService(db *sql.DB) *StudentService {
 	return &StudentService{
-		repo: repository.NewStudentRepository(db),
-		db:   db,
+		repo:        repository.NewStudentRepository(db),
+		db:          db,
+		listCache:   make(map[string][]models.Student),
+		countsCache: nil,
+		churchCache: "",
 	}
 }
 
-// List returns students filtered by stage and search.
+func (s *StudentService) invalidateCache() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.listCache = make(map[string][]models.Student)
+	s.countsCache = nil
+}
+
+// List returns students filtered by stage and search, utilizing in-memory cache.
 func (s *StudentService) List(stage, search string) ([]models.Student, error) {
-	return s.repo.FindAll(stage, search)
+	cacheKey := fmt.Sprintf("%s:%s", stage, strings.TrimSpace(search))
+
+	s.mu.RLock()
+	if cached, ok := s.listCache[cacheKey]; ok {
+		s.mu.RUnlock()
+		res := make([]models.Student, len(cached))
+		copy(res, cached)
+		return res, nil
+	}
+	s.mu.RUnlock()
+
+	students, err := s.repo.FindAll(stage, search)
+	if err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	s.listCache[cacheKey] = students
+	s.mu.Unlock()
+
+	res := make([]models.Student, len(students))
+	copy(res, students)
+	return res, nil
 }
 
 // GetByID returns a single student.
@@ -47,12 +85,20 @@ func (s *StudentService) CreateOrUpdate(student models.Student) error {
 		student.CreatedAt = existing.CreatedAt
 		slog.Info("updating existing student", "nationalId", student.NationalID)
 	}
-	return s.repo.Save(&student)
+	if err := s.repo.Save(&student); err != nil {
+		return err
+	}
+	s.invalidateCache()
+	return nil
 }
 
 // Delete removes a student by ID.
 func (s *StudentService) Delete(id string) error {
-	return s.repo.Delete(id)
+	if err := s.repo.Delete(id); err != nil {
+		return err
+	}
+	s.invalidateCache()
+	return nil
 }
 
 // DeleteAll wipes all students and import data. Creates a backup first.
@@ -61,12 +107,37 @@ func (s *StudentService) DeleteAll() error {
 	if err := s.repo.DeleteAll(); err != nil {
 		return fmt.Errorf("delete all students: %w", err)
 	}
+	s.invalidateCache()
 	return nil
 }
 
-// CountByStage returns per-stage student counts.
+// CountByStage returns per-stage student counts with caching.
 func (s *StudentService) CountByStage() (map[string]int, error) {
-	return s.repo.CountByStage()
+	s.mu.RLock()
+	if s.countsCache != nil {
+		defer s.mu.RUnlock()
+		copyCounts := make(map[string]int, len(s.countsCache))
+		for k, v := range s.countsCache {
+			copyCounts[k] = v
+		}
+		return copyCounts, nil
+	}
+	s.mu.RUnlock()
+
+	counts, err := s.repo.CountByStage()
+	if err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	s.countsCache = counts
+	s.mu.Unlock()
+
+	copyCounts := make(map[string]int, len(counts))
+	for k, v := range counts {
+		copyCounts[k] = v
+	}
+	return copyCounts, nil
 }
 
 // ImportBatch imports a batch of students atomically.
@@ -80,9 +151,49 @@ func (s *StudentService) ImportBatch(students []models.Student) (models.ImportBa
 	if ckErr := database.Checkpoint(s.db); ckErr != nil {
 		slog.Warn("WAL checkpoint failed after import", "error", ckErr)
 	}
+	s.invalidateCache()
 	slog.Info("import batch committed",
 		"inserted", result.Inserted,
 		"updated", result.Updated,
 	)
 	return result, nil
+}
+
+// GetChurchName returns the configured church name, or default if empty.
+func (s *StudentService) GetChurchName() (string, error) {
+	s.mu.RLock()
+	if s.churchCache != "" {
+		defer s.mu.RUnlock()
+		return s.churchCache, nil
+	}
+	s.mu.RUnlock()
+
+	name, err := s.repo.GetChurchSetting("church_name")
+	if err != nil {
+		return "", err
+	}
+	if name == "" {
+		name = "كنيسة مارجرجس"
+	}
+
+	s.mu.Lock()
+	s.churchCache = name
+	s.mu.Unlock()
+
+	return name, nil
+}
+
+// SetChurchName sets the configured church name.
+func (s *StudentService) SetChurchName(name string) error {
+	if strings.TrimSpace(name) == "" {
+		name = "كنيسة مارجرجس"
+	}
+	cleanName := strings.TrimSpace(name)
+	if err := s.repo.SetChurchSetting("church_name", cleanName); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.churchCache = cleanName
+	s.mu.Unlock()
+	return nil
 }

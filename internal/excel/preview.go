@@ -128,16 +128,33 @@ func NormalizeReviewedStudent(student models.Student) (models.Student, error) {
 	if student.Stage == "" {
 		return student, fmt.Errorf("المرحلة التعليمية مطلوبة")
 	}
+	if student.Stage == "جامعة" {
+		if student.Grade == "" && student.UniversityYear != "" {
+			student.Grade = student.UniversityYear
+		}
+		if student.UniversityYear == "" && student.Grade != "" {
+			student.UniversityYear = student.Grade
+		}
+	}
 	res := normalization.NormalizeGradeAndTrack(student.Stage, student.Grade)
 	if !res.Exact {
 		return student, fmt.Errorf("الصف الدراسي غير معتمد؛ اختر القيمة المقترحة أو قيمة معتمدة")
 	}
 	student.Grade = res.Grade
+	if student.Stage == "جامعة" {
+		student.UniversityYear = res.Grade
+	}
 	if student.Stage == "ثانوي" {
 		if student.Track == "" {
 			student.Track = res.Track
 		}
 	}
+	student.FamilyHead = cleanText(student.FamilyHead)
+	student.SchoolName = cleanText(student.SchoolName)
+	student.Phone = cleanText(student.Phone)
+	student.ParentPhone = cleanText(student.ParentPhone)
+	student.Address = cleanText(student.Address)
+	student.ChurchFamilyID = optionalNumber(student.ChurchFamilyID)
 	student.CathedralStudentID = optionalNumber(student.CathedralStudentID)
 	student.CathedralFamilyID = optionalNumber(student.CathedralFamilyID)
 	student.AlexandriaStudentID = optionalNumber(student.AlexandriaStudentID)
@@ -168,6 +185,9 @@ func validateRow(student models.Student, rawGrade, sheet string, rowNumber int) 
 
 	res := normalization.NormalizeGradeAndTrack(student.Stage, rawGrade)
 	row.Student.Grade = res.Grade
+	if student.Stage == "جامعة" {
+		row.Student.UniversityYear = res.Grade
+	}
 	if student.Stage == "ثانوي" {
 		row.Student.Track = res.Track
 	}

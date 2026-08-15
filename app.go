@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
+	"time"
 
 	"Ka4f-El-Tolab/internal/config"
 	"Ka4f-El-Tolab/internal/database"
@@ -15,13 +18,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
-	"gorm.io/gorm"
 )
 
 // App is the Wails-bound handler. It delegates all business logic to services.
 type App struct {
 	ctx        context.Context
-	db         *gorm.DB
+	db         *sql.DB
 	paths      config.Paths
 	studentSvc *service.StudentService
 	excelSvc   *service.ExcelService
@@ -215,17 +217,110 @@ func (a *App) IgnorePendingImportRow(id string) error {
 	return a.excelSvc.IgnorePendingRow(id)
 }
 
-// --- Excel Export ---
+// --- Church Settings & Excel Export ---
 
-func (a *App) ExportStudentsToExcel(filePath string, stage string) error {
+func (a *App) GetChurchName() (string, error) {
+	if a.studentSvc == nil {
+		return "كنيسة مارجرجس", nil
+	}
+	return a.studentSvc.GetChurchName()
+}
+
+func (a *App) SetChurchName(name string) error {
+	if a.studentSvc == nil {
+		return fmt.Errorf("الخدمة غير جاهزة")
+	}
+	return a.studentSvc.SetChurchName(name)
+}
+
+func (a *App) ExportStudentsToExcel(filePath string, stage string, churchName string) error {
 	if a.studentSvc == nil || a.excelSvc == nil {
 		return fmt.Errorf("الخدمة غير جاهزة")
 	}
-	students, err := a.studentSvc.List(stage, "")
+	if churchName == "" {
+		if dbName, err := a.studentSvc.GetChurchName(); err == nil && dbName != "" {
+			churchName = dbName
+		} else {
+			churchName = "كنيسة مارجرجس"
+		}
+	}
+	if filePath == "" {
+		if a.ctx == nil {
+			return fmt.Errorf("التطبيق غير جاهز")
+		}
+		cleanChurch := strings.ReplaceAll(strings.TrimSpace(churchName), " ", "-")
+		var defaultName string
+		cleanStage := stage
+		if cleanStage == "الكل" {
+			cleanStage = ""
+		}
+		if cleanStage != "" {
+			defaultName = fmt.Sprintf("كشف-طلاب-مرحلة-%s-%s-%s.xlsx", cleanStage, cleanChurch, time.Now().Format("2006-01-02"))
+		} else {
+			defaultName = fmt.Sprintf("كشف-الطلاب-الشامل-%s-%s.xlsx", cleanChurch, time.Now().Format("2006-01-02"))
+		}
+		selectedPath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+			Title:           fmt.Sprintf("تصدير كشف الطلاب إلى Excel - %s", churchName),
+			DefaultFilename: defaultName,
+			Filters: []runtime.FileFilter{
+				{DisplayName: "ملف Excel (*.xlsx)", Pattern: "*.xlsx"},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if selectedPath == "" {
+			return nil // User cancelled save dialog
+		}
+		filePath = selectedPath
+	}
+	queryStage := stage
+	if queryStage == "الكل" {
+		queryStage = ""
+	}
+	students, err := a.studentSvc.List(queryStage, "")
 	if err != nil {
 		return err
 	}
-	return a.excelSvc.ExportStudents(students, filePath)
+	return a.excelSvc.ExportStudents(students, filePath, churchName)
+}
+
+func (a *App) ExportBlankTemplate(filePath string, churchName string) error {
+	if a.excelSvc == nil {
+		return fmt.Errorf("الخدمة غير جاهزة")
+	}
+	if churchName == "" {
+		if a.studentSvc != nil {
+			if dbName, err := a.studentSvc.GetChurchName(); err == nil && dbName != "" {
+				churchName = dbName
+			}
+		}
+		if churchName == "" {
+			churchName = "كنيسة مارجرجس"
+		}
+	}
+	if filePath == "" {
+		if a.ctx == nil {
+			return fmt.Errorf("التطبيق غير جاهز")
+		}
+		cleanChurch := strings.ReplaceAll(strings.TrimSpace(churchName), " ", "-")
+		defaultName := fmt.Sprintf("قالب-استيراد-بيانات-الطلاب-%s.xlsx", cleanChurch)
+		selectedPath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+			Title:           "حفظ قالب استيراد بيانات الطلاب",
+			DefaultFilename: defaultName,
+			Filters: []runtime.FileFilter{
+				{DisplayName: "ملف Excel (*.xlsx)", Pattern: "*.xlsx"},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if selectedPath == "" {
+			return nil
+		}
+		filePath = selectedPath
+	}
+	return a.excelSvc.GenerateTemplate(filePath, churchName)
 }
 
 func (a *App) ExportImportRejections(rows []models.ImportRow) error {
@@ -303,10 +398,7 @@ func (a *App) shutdown(ctx context.Context) {
 		if err := database.Checkpoint(a.db); err != nil {
 			slog.Warn("final WAL checkpoint failed", "error", err)
 		}
-		sqlDB, _ := a.db.DB()
-		if sqlDB != nil {
-			sqlDB.Close()
-		}
+		_ = a.db.Close()
 	}
 	os.Exit(0)
 }

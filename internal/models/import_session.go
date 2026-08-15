@@ -14,37 +14,33 @@ const (
 
 // ImportSession persists the unresolved portion of one Excel import.
 type ImportSession struct {
-	ID                  string    `json:"id" gorm:"primaryKey;column:id"`
-	SourceFilename      string    `json:"sourceFilename" gorm:"column:source_filename"`
-	CreatedAt           time.Time `json:"createdAt" gorm:"column:created_at"`
-	TotalRows           int       `json:"totalRows" gorm:"column:total_rows"`
-	ImportedCount       int       `json:"importedCount" gorm:"column:imported_count"`
-	InitialPendingCount int       `json:"initialPendingCount" gorm:"column:initial_pending_count"`
-	PendingCount        int       `json:"pendingCount" gorm:"column:pending_count"`
-	Status              string    `json:"status" gorm:"column:status"`
+	ID                  string    `json:"id"`
+	SourceFilename      string    `json:"sourceFilename"`
+	CreatedAt           time.Time `json:"createdAt"`
+	TotalRows           int       `json:"totalRows"`
+	ImportedCount       int       `json:"importedCount"`
+	InitialPendingCount int       `json:"initialPendingCount"`
+	PendingCount        int       `json:"pendingCount"`
+	Status              string    `json:"status"`
 }
-
-func (ImportSession) TableName() string { return "import_sessions" }
 
 // PendingImportRow stores an editable row snapshot until it is resolved or ignored.
 type PendingImportRow struct {
-	ID                   string     `json:"id" gorm:"primaryKey;column:id"`
-	SessionID            string     `json:"sessionId" gorm:"column:session_id"`
-	Stage                string     `json:"stage" gorm:"column:stage"`
-	IssueType            string     `json:"issueType" gorm:"column:issue_type"`
-	RawData              string     `json:"rawData" gorm:"column:raw_data"`
-	GroupKey             string     `json:"groupKey" gorm:"column:group_key"`
-	SuggestedValue       string     `json:"suggestedValue" gorm:"column:suggested_value"`
-	SuggestionConfidence float64    `json:"suggestionConfidence" gorm:"column:suggestion_confidence"`
-	ConflictRowID        string     `json:"conflictRowId" gorm:"column:conflict_row_id"`
-	Status               string     `json:"status" gorm:"column:status"`
-	ResolvedData         string     `json:"resolvedData" gorm:"column:resolved_data"`
-	ResolvedAt           *time.Time `json:"resolvedAt,omitempty" gorm:"column:resolved_at"`
-	CreatedAt            time.Time  `json:"createdAt" gorm:"column:created_at"`
-	UpdatedAt            time.Time  `json:"updatedAt" gorm:"column:updated_at"`
+	ID                   string     `json:"id"`
+	SessionID            string     `json:"sessionId"`
+	Stage                string     `json:"stage"`
+	IssueType            string     `json:"issueType"`
+	RawData              string     `json:"rawData"`
+	GroupKey             string     `json:"groupKey"`
+	SuggestedValue       string     `json:"suggestedValue"`
+	SuggestionConfidence float64    `json:"suggestionConfidence"`
+	ConflictRowID        string     `json:"conflictRowId"`
+	Status               string     `json:"status"`
+	ResolvedData         string     `json:"resolvedData"`
+	ResolvedAt           *time.Time `json:"resolvedAt,omitempty"`
+	CreatedAt            time.Time  `json:"createdAt"`
+	UpdatedAt            time.Time  `json:"updatedAt"`
 }
-
-func (PendingImportRow) TableName() string { return "pending_import_rows" }
 
 // PendingImportRowView is the renderer DTO.
 type PendingImportRowView struct {

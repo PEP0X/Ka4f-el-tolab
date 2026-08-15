@@ -22,6 +22,10 @@ export function DeleteStudent(arg1) {
   return window['go']['main']['App']['DeleteStudent'](arg1);
 }
 
+export function ExportBlankTemplate(arg1, arg2) {
+  return window['go']['main']['App']['ExportBlankTemplate'](arg1, arg2);
+}
+
 export function ExportImportRejections(arg1) {
   return window['go']['main']['App']['ExportImportRejections'](arg1);
 }
@@ -30,8 +34,12 @@ export function ExportPendingImportRows(arg1) {
   return window['go']['main']['App']['ExportPendingImportRows'](arg1);
 }
 
-export function ExportStudentsToExcel(arg1, arg2) {
-  return window['go']['main']['App']['ExportStudentsToExcel'](arg1, arg2);
+export function ExportStudentsToExcel(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ExportStudentsToExcel'](arg1, arg2, arg3);
+}
+
+export function GetChurchName() {
+  return window['go']['main']['App']['GetChurchName']();
 }
 
 export function GetPendingImportRows(arg1) {
@@ -84,6 +92,10 @@ export function ResolvePendingGradeGroup(arg1, arg2, arg3, arg4) {
 
 export function ResolvePendingImportRow(arg1, arg2) {
   return window['go']['main']['App']['ResolvePendingImportRow'](arg1, arg2);
+}
+
+export function SetChurchName(arg1) {
+  return window['go']['main']['App']['SetChurchName'](arg1);
 }
 
 export function StartExcelImport() {

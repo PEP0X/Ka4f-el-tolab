@@ -110,6 +110,7 @@ export namespace models {
 	}
 	export class Student {
 	    id: string;
+	    familyHead: string;
 	    fullName: string;
 	    nationalId: string;
 	    gender: string;
@@ -120,11 +121,13 @@ export namespace models {
 	    address: string;
 	    stage: string;
 	    grade: string;
+	    schoolName: string;
 	    track: string;
 	    universityName: string;
 	    faculty: string;
 	    studyYears: string;
 	    universityYear: string;
+	    churchFamilyId: string;
 	    cathedralStudentId: string;
 	    cathedralFamilyId: string;
 	    alexandriaStudentId: string;
@@ -144,6 +147,7 @@ export namespace models {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
+	        this.familyHead = source["familyHead"];
 	        this.fullName = source["fullName"];
 	        this.nationalId = source["nationalId"];
 	        this.gender = source["gender"];
@@ -154,11 +158,13 @@ export namespace models {
 	        this.address = source["address"];
 	        this.stage = source["stage"];
 	        this.grade = source["grade"];
+	        this.schoolName = source["schoolName"];
 	        this.track = source["track"];
 	        this.universityName = source["universityName"];
 	        this.faculty = source["faculty"];
 	        this.studyYears = source["studyYears"];
 	        this.universityYear = source["universityYear"];
+	        this.churchFamilyId = source["churchFamilyId"];
 	        this.cathedralStudentId = source["cathedralStudentId"];
 	        this.cathedralFamilyId = source["cathedralFamilyId"];
 	        this.alexandriaStudentId = source["alexandriaStudentId"];

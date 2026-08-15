@@ -186,7 +186,7 @@ export const CorrectionWorkspace: React.FC = () => {
   }
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ height: '100%', width: '100%', bgcolor: '#f8fafc', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
       <Toast
         open={toast.open}
         message={toast.message}

@@ -4,34 +4,35 @@ import "time"
 
 // Student represents a student in the church service database.
 type Student struct {
-	ID                  string    `json:"id" gorm:"primaryKey;column:id"`
-	FullName            string    `json:"fullName" gorm:"column:full_name"`
-	NationalID          string    `json:"nationalId" gorm:"column:national_id"`
-	Gender              string    `json:"gender" gorm:"column:gender"`
-	BirthDate           string    `json:"birthDate" gorm:"column:birth_date"`
-	Governorate         string    `json:"governorate" gorm:"column:governorate"`
-	Phone               string    `json:"phone" gorm:"column:phone"`
-	ParentPhone         string    `json:"parentPhone" gorm:"column:parent_phone"`
-	Address             string    `json:"address" gorm:"column:address"`
-	Stage               string    `json:"stage" gorm:"column:stage"`
-	Grade               string    `json:"grade" gorm:"column:grade"`
-	Track               string    `json:"track" gorm:"column:track"`
-	UniversityName      string    `json:"universityName" gorm:"column:university_name"`
-	Faculty             string    `json:"faculty" gorm:"column:faculty"`
-	StudyYears          string    `json:"studyYears" gorm:"column:study_years"`
-	UniversityYear      string    `json:"universityYear" gorm:"column:university_year"`
-	CathedralStudentID  string    `json:"cathedralStudentId" gorm:"column:cathedral_student_id"`
-	CathedralFamilyID   string    `json:"cathedralFamilyId" gorm:"column:cathedral_family_id"`
-	AlexandriaStudentID string    `json:"alexandriaStudentId" gorm:"column:alexandria_student_id"`
-	AlexandriaFamilyID  string    `json:"alexandriaFamilyId" gorm:"column:alexandria_family_id"`
-	PhotoPath           string    `json:"photoPath" gorm:"column:photo_path"`
-	DeaconStatus        bool      `json:"deaconStatus" gorm:"column:deacon_status"`
-	Notes               string    `json:"notes" gorm:"column:notes"`
-	CreatedAt           time.Time `json:"createdAt" gorm:"column:created_at"`
-	UpdatedAt           time.Time `json:"updatedAt" gorm:"column:updated_at"`
+	ID                  string    `json:"id"`
+	FamilyHead          string    `json:"familyHead"`
+	FullName            string    `json:"fullName"`
+	NationalID          string    `json:"nationalId"`
+	Gender              string    `json:"gender"`
+	BirthDate           string    `json:"birthDate"`
+	Governorate         string    `json:"governorate"`
+	Phone               string    `json:"phone"`
+	ParentPhone         string    `json:"parentPhone"`
+	Address             string    `json:"address"`
+	Stage               string    `json:"stage"`
+	Grade               string    `json:"grade"`
+	SchoolName          string    `json:"schoolName"`
+	Track               string    `json:"track"`
+	UniversityName      string    `json:"universityName"`
+	Faculty             string    `json:"faculty"`
+	StudyYears          string    `json:"studyYears"`
+	UniversityYear      string    `json:"universityYear"`
+	ChurchFamilyID      string    `json:"churchFamilyId"`
+	CathedralStudentID  string    `json:"cathedralStudentId"`
+	CathedralFamilyID   string    `json:"cathedralFamilyId"`
+	AlexandriaStudentID string    `json:"alexandriaStudentId"`
+	AlexandriaFamilyID  string    `json:"alexandriaFamilyId"`
+	PhotoPath           string    `json:"photoPath"`
+	DeaconStatus        bool      `json:"deaconStatus"`
+	Notes               string    `json:"notes"`
+	CreatedAt           time.Time `json:"createdAt"`
+	UpdatedAt           time.Time `json:"updatedAt"`
 }
-
-func (Student) TableName() string { return "students" }
 
 // ImportBatchResult describes the committed result of an Excel import.
 type ImportBatchResult struct {
@@ -47,11 +48,9 @@ type StageCount struct {
 
 // ChurchSettings stores key-value system configuration.
 type ChurchSettings struct {
-	Key   string `json:"key" gorm:"primaryKey"`
+	Key   string `json:"key"`
 	Value string `json:"value"`
 }
-
-func (ChurchSettings) TableName() string { return "church_settings" }
 
 // NIDData represents parsed details from Egyptian National ID.
 type NIDData struct {

@@ -125,7 +125,10 @@ export const useCorrectionStore = create<CorrectionState>((set, get) => ({
   },
 
   loadSession: async (sessionId, preserveActiveTab = true) => {
-    set({ isLoading: true, error: null, currentSessionId: sessionId });
+    const isCached = get().currentSessionId === sessionId && get().rows.length > 0;
+    if (!isCached) {
+      set({ isLoading: true, error: null, currentSessionId: sessionId });
+    }
     try {
       const app = window.go?.main?.App;
       const rows = (await app?.GetPendingImportRows?.(sessionId)) || [];

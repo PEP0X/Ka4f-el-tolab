@@ -3,6 +3,7 @@
 package database
 
 import (
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,35 +12,25 @@ import (
 
 	"Ka4f-El-Tolab/internal/config"
 
-	"github.com/glebarez/sqlite"
-	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
+	_ "modernc.org/sqlite"
 )
 
 // Open creates a production-grade SQLite connection with WAL, foreign keys,
 // and a bounded connection pool suitable for a desktop application.
-func Open(paths config.Paths) (*gorm.DB, error) {
+func Open(paths config.Paths) (*sql.DB, error) {
 	if err := paths.Ensure(); err != nil {
 		return nil, fmt.Errorf("create config directories: %w", err)
 	}
 
-	db, err := gorm.Open(sqlite.Open(paths.DBPath), &gorm.Config{
-		Logger:                 gormlogger.Default.LogMode(gormlogger.Warn),
-		SkipDefaultTransaction: true, // we manage transactions explicitly
-	})
+	db, err := sql.Open("sqlite", paths.DBPath)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	sqlDB, err := db.DB()
-	if err != nil {
-		return nil, fmt.Errorf("get underlying sql.DB: %w", err)
-	}
-
 	// Desktop app: single writer, multiple readers
-	sqlDB.SetMaxOpenConns(1)
-	sqlDB.SetMaxIdleConns(1)
-	sqlDB.SetConnMaxLifetime(0)
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0)
 
 	pragmas := []string{
 		"PRAGMA journal_mode=WAL;",
@@ -49,7 +40,7 @@ func Open(paths config.Paths) (*gorm.DB, error) {
 		"PRAGMA wal_autocheckpoint=1000;",
 	}
 	for _, p := range pragmas {
-		if _, err := sqlDB.Exec(p); err != nil {
+		if _, err := db.Exec(p); err != nil {
 			slog.Warn("pragma failed", "pragma", p, "error", err)
 		}
 	}
@@ -81,11 +72,7 @@ func Backup(paths config.Paths) (string, error) {
 
 // Checkpoint forces a WAL checkpoint, flushing all WAL data into the main DB file.
 // This is critical after bulk writes to ensure data survives process restarts.
-func Checkpoint(db *gorm.DB) error {
-	sqlDB, err := db.DB()
-	if err != nil {
-		return err
-	}
-	_, err = sqlDB.Exec("PRAGMA wal_checkpoint(TRUNCATE);")
+func Checkpoint(db *sql.DB) error {
+	_, err := db.Exec("PRAGMA wal_checkpoint(TRUNCATE);")
 	return err
 }

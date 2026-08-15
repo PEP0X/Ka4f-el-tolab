@@ -1,5 +1,6 @@
 export interface Student {
   id: string;
+  familyHead?: string; // اسم رب الأسرة (اختياري)
   fullName: string;
   nationalId: string;
   gender: string;
@@ -10,6 +11,7 @@ export interface Student {
   address: string;
   stage: string; // e.g. حضانات (KG), ابتدائي, إعدادي, ثانوي, جامعة
   grade: string; // e.g. الصف الأول, الصف الثاني
+  schoolName?: string; // اسم المدرسة (اختياري)
   track?: string; // مسار الثانوية (عام، فني صناعي...)
 
   // University Fields (Conditional for 'جامعة')
@@ -19,6 +21,7 @@ export interface Student {
   universityYear?: string;
 
   // Care & Membership IDs
+  churchFamilyId?: string; // رقم الأسرة بكشوفات الكنيسة (اختياري)
   cathedralStudentId: string; // إجباري
   cathedralFamilyId: string;  // إجباري
   alexandriaStudentId?: string; // اختياري

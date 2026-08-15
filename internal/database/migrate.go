@@ -1,10 +1,10 @@
+// Package database provides SQLite schema migration.
 package database
 
 import (
+	"database/sql"
 	"fmt"
 	"log/slog"
-
-	"gorm.io/gorm"
 )
 
 // migration represents a single versioned schema change.
@@ -109,27 +109,43 @@ var migrations = []migration{
 			applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);`,
 	},
+	{
+		Version: 6,
+		Name:    "add_family_head_church_family_id_school_name",
+		SQL: `ALTER TABLE students ADD COLUMN family_head TEXT NOT NULL DEFAULT '';
+		ALTER TABLE students ADD COLUMN church_family_id TEXT NOT NULL DEFAULT '';
+		ALTER TABLE students ADD COLUMN school_name TEXT NOT NULL DEFAULT '';`,
+	},
 }
 
 // Migrate runs all pending migrations in order.
 // It tracks applied migrations in the schema_migrations table.
-func Migrate(db *gorm.DB) error {
+func Migrate(db *sql.DB) error {
 	// Ensure the migrations tracking table exists first
-	if err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
 		version INTEGER PRIMARY KEY,
 		name TEXT NOT NULL,
 		applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	)`).Error; err != nil {
+	)`); err != nil {
 		return fmt.Errorf("create migrations table: %w", err)
 	}
 
-	var applied []int
-	if err := db.Raw("SELECT version FROM schema_migrations ORDER BY version").Scan(&applied).Error; err != nil {
+	rows, err := db.Query("SELECT version FROM schema_migrations ORDER BY version")
+	if err != nil {
 		return fmt.Errorf("read applied migrations: %w", err)
 	}
-	appliedSet := make(map[int]bool, len(applied))
-	for _, v := range applied {
+	defer rows.Close()
+
+	appliedSet := make(map[int]bool)
+	for rows.Next() {
+		var v int
+		if err := rows.Scan(&v); err != nil {
+			return fmt.Errorf("scan migration version: %w", err)
+		}
 		appliedSet[v] = true
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate applied migrations: %w", err)
 	}
 
 	for _, m := range migrations {
@@ -137,10 +153,10 @@ func Migrate(db *gorm.DB) error {
 			continue
 		}
 		slog.Info("running migration", "version", m.Version, "name", m.Name)
-		if err := db.Exec(m.SQL).Error; err != nil {
+		if _, err := db.Exec(m.SQL); err != nil {
 			return fmt.Errorf("migration %d (%s): %w", m.Version, m.Name, err)
 		}
-		if err := db.Exec("INSERT INTO schema_migrations (version, name) VALUES (?, ?)", m.Version, m.Name).Error; err != nil {
+		if _, err := db.Exec("INSERT INTO schema_migrations (version, name) VALUES (?, ?)", m.Version, m.Name); err != nil {
 			return fmt.Errorf("record migration %d: %w", m.Version, err)
 		}
 		slog.Info("migration applied", "version", m.Version, "name", m.Name)

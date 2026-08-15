@@ -2,6 +2,21 @@ import { create } from 'zustand';
 import { Student, StageType, NIDData } from '../types/student';
 import '../types/wails';
 
+interface CacheEntry {
+  data: Student[];
+  timestamp: number;
+}
+
+// In-memory per-stage & query cache for instantaneous tab/page switching
+const studentsCache = new Map<string, CacheEntry>();
+let stageCountsCache: { counts: Record<string, number>; timestamp: number } | null = null;
+const CACHE_TTL_MS = 60 * 1000; // 1 minute fresh window
+
+export function invalidateStudentCache() {
+  studentsCache.clear();
+  stageCountsCache = null;
+}
+
 interface StudentState {
   students: Student[];
   stageCounts: Record<string, number>;
@@ -11,13 +26,14 @@ interface StudentState {
   error: string | null;
 
   // Actions
-  fetchStudents: () => Promise<void>;
-  fetchStageCounts: () => Promise<void>;
+  fetchStudents: (force?: boolean) => Promise<void>;
+  fetchStageCounts: (force?: boolean) => Promise<void>;
   setActiveStage: (stage: StageType) => void;
   setSearchQuery: (query: string) => void;
   addStudent: (student: Student) => Promise<void>;
   deleteStudent: (id: string) => Promise<void>;
   deleteAllData: () => Promise<void>;
+  invalidateCache: () => void;
   parseNID: (nid: string) => Promise<NIDData>;
 }
 
@@ -46,45 +62,99 @@ export const useStudentStore = create<StudentState>((set, get) => ({
   isLoading: false,
   error: null,
 
-  fetchStageCounts: async () => {
+  invalidateCache: () => {
+    invalidateStudentCache();
+  },
+
+  fetchStageCounts: async (force = false) => {
+    if (!force && stageCountsCache && Date.now() - stageCountsCache.timestamp < CACHE_TTL_MS) {
+      set({ stageCounts: stageCountsCache.counts });
+      return;
+    }
     try {
       const app = await getWailsApp();
       if (app?.GetStageCounts) {
         const counts = await app.GetStageCounts();
-        set((state) => ({
-          stageCounts: { ...state.stageCounts, ...counts, 'حضانات (KG)': counts['حضانات'] ?? state.stageCounts['حضانات (KG)'] },
-        }));
+        const updatedCounts = {
+          ...get().stageCounts,
+          ...counts,
+          'حضانات (KG)': counts['حضانات'] ?? get().stageCounts['حضانات (KG)'],
+        };
+        stageCountsCache = { counts: updatedCounts, timestamp: Date.now() };
+        set({ stageCounts: updatedCounts });
       }
     } catch (err) {
       console.warn('Failed to fetch stage counts:', err);
     }
   },
 
-  fetchStudents: async () => {
-    set({ isLoading: true, error: null });
+  fetchStudents: async (force = false) => {
+    const { activeStage, searchQuery, students } = get();
+    const stageFilter = activeStage.replace(' (KG)', '');
+    const cacheKey = `${stageFilter}:${searchQuery.trim().toLowerCase()}`;
+    const cached = studentsCache.get(cacheKey);
+
+    // 1. Instant cache hit: render immediately without full spinner
+    if (cached && !force) {
+      set({ students: cached.data, isLoading: false, error: null });
+      // If within TTL, no background revalidation needed
+      if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
+        return;
+      }
+    } else if (students.length === 0) {
+      // Only show spinner on initial cold load
+      set({ isLoading: true, error: null });
+    }
+
     try {
       const app = await getWailsApp();
       if (app?.GetStudents) {
-        const { activeStage, searchQuery } = get();
-        const stageFilter = activeStage.replace(' (KG)', '');
         const data = await app.GetStudents(stageFilter, searchQuery);
-        set({ students: data || [], isLoading: false });
+        const resolved = data || [];
+        studentsCache.set(cacheKey, { data: resolved, timestamp: Date.now() });
+        set({ students: resolved, isLoading: false });
       } else {
-        set({ students: [], isLoading: false });
+        set({ isLoading: false });
       }
-      await get().fetchStageCounts();
+      await get().fetchStageCounts(force);
     } catch (err: any) {
       set({ error: err?.message || 'حدث خطأ أثناء جلب قائمة الطلاب', isLoading: false });
     }
   },
 
   setActiveStage: (stage: StageType) => {
-    set({ activeStage: stage });
+    const prevStage = get().activeStage;
+    if (prevStage === stage && get().students.length > 0) return;
+
+    const { searchQuery } = get();
+    const stageFilter = stage.replace(' (KG)', '');
+    const cacheKey = `${stageFilter}:${searchQuery.trim().toLowerCase()}`;
+    const cached = studentsCache.get(cacheKey);
+
+    if (cached) {
+      // Instant switch with 0ms delay!
+      set({ activeStage: stage, students: cached.data, isLoading: false });
+      if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
+        return;
+      }
+    } else {
+      set({ activeStage: stage });
+    }
     get().fetchStudents();
   },
 
   setSearchQuery: (query: string) => {
     set({ searchQuery: query });
+    const { activeStage } = get();
+    const stageFilter = activeStage.replace(' (KG)', '');
+    const cacheKey = `${stageFilter}:${query.trim().toLowerCase()}`;
+    const cached = studentsCache.get(cacheKey);
+    if (cached) {
+      set({ students: cached.data, isLoading: false });
+      if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
+        return;
+      }
+    }
     get().fetchStudents();
   },
 
@@ -94,8 +164,10 @@ export const useStudentStore = create<StudentState>((set, get) => ({
       const app = window.go?.main?.App;
       if (app?.AddStudent) {
         await app.AddStudent(student);
-        await get().fetchStudents();
+        invalidateStudentCache();
+        await get().fetchStudents(true);
       } else {
+        invalidateStudentCache();
         set((state) => ({
           students: [...state.students.filter((s) => s.id !== student.id), student],
           isLoading: false,
@@ -112,8 +184,10 @@ export const useStudentStore = create<StudentState>((set, get) => ({
       const app = window.go?.main?.App;
       if (app?.DeleteStudent) {
         await app.DeleteStudent(id);
-        await get().fetchStudents();
+        invalidateStudentCache();
+        await get().fetchStudents(true);
       } else {
+        invalidateStudentCache();
         set((state) => ({
           students: state.students.filter((s) => s.id !== id),
           isLoading: false,
@@ -131,6 +205,7 @@ export const useStudentStore = create<StudentState>((set, get) => ({
       if (app?.DeleteAllData) {
         await app.DeleteAllData();
       }
+      invalidateStudentCache();
       set({
         students: [],
         stageCounts: {
@@ -142,8 +217,8 @@ export const useStudentStore = create<StudentState>((set, get) => ({
         },
         isLoading: false,
       });
-      await get().fetchStageCounts();
-      await get().fetchStudents();
+      await get().fetchStageCounts(true);
+      await get().fetchStudents(true);
     } catch (err: any) {
       set({ error: err?.message || 'فشل حذف قاعدة البيانات', isLoading: false });
       throw err;
@@ -173,3 +248,4 @@ export const useStudentStore = create<StudentState>((set, get) => ({
     return { nationalId: nid, valid: false, birthDate: '', gender: '', governorate: '', age: 0, error: 'الرقم القومي غير صالح' };
   },
 }));
+

@@ -12,11 +12,15 @@ export function DeleteAllData():Promise<void>;
 
 export function DeleteStudent(arg1:string):Promise<void>;
 
+export function ExportBlankTemplate(arg1:string,arg2:string):Promise<void>;
+
 export function ExportImportRejections(arg1:Array<models.ImportRow>):Promise<void>;
 
 export function ExportPendingImportRows(arg1:string):Promise<void>;
 
-export function ExportStudentsToExcel(arg1:string,arg2:string):Promise<void>;
+export function ExportStudentsToExcel(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function GetChurchName():Promise<string>;
 
 export function GetPendingImportRows(arg1:string):Promise<Array<models.PendingImportRowView>>;
 
@@ -43,6 +47,8 @@ export function ResolvePendingDuplicate(arg1:string,arg2:Array<string>,arg3:mode
 export function ResolvePendingGradeGroup(arg1:string,arg2:string,arg3:string,arg4:string):Promise<number>;
 
 export function ResolvePendingImportRow(arg1:string,arg2:models.Student):Promise<models.ImportBatchResult>;
+
+export function SetChurchName(arg1:string):Promise<void>;
 
 export function StartExcelImport():Promise<models.ImportPreview>;
 

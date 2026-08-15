@@ -1,24 +1,23 @@
 package service
 
 import (
+	"database/sql"
 	"fmt"
 	"log/slog"
 
 	"Ka4f-El-Tolab/internal/excel"
 	"Ka4f-El-Tolab/internal/models"
 	"Ka4f-El-Tolab/internal/repository"
-
-	"gorm.io/gorm"
 )
 
 // ExcelService orchestrates Excel import/export operations.
 type ExcelService struct {
-	db         *gorm.DB
+	db         *sql.DB
 	studentSvc *StudentService
 	importRepo *repository.ImportSessionRepository
 }
 
-func NewExcelService(db *gorm.DB, studentSvc *StudentService) *ExcelService {
+func NewExcelService(db *sql.DB, studentSvc *StudentService) *ExcelService {
 	return &ExcelService{
 		db:         db,
 		studentSvc: studentSvc,
@@ -146,9 +145,14 @@ func (s *ExcelService) ExportRejections(rows []models.ImportRow, filePath string
 	return excel.ExportRejectionReport(filePath, rows)
 }
 
-// ExportStudents generates an Excel spreadsheet of students.
-func (s *ExcelService) ExportStudents(students []models.Student, filePath string) error {
-	return excel.ExportStudentsToExcel(students, filePath)
+// ExportStudents generates an Excel spreadsheet of students with analytics and stage sheets.
+func (s *ExcelService) ExportStudents(students []models.Student, filePath string, churchName string) error {
+	return excel.ExportStudentsToExcel(students, filePath, churchName)
+}
+
+// GenerateTemplate generates a clean, multi-stage blank import template with dropdowns.
+func (s *ExcelService) GenerateTemplate(filePath string, churchName string) error {
+	return excel.ExportBlankImportTemplate(filePath, churchName)
 }
 
 // GetExportablePendingRows returns pending rows for export.

@@ -93,6 +93,7 @@ import { Student, StageType, ImportPreview, ImportRow, ImportSession } from '../
 import '../types/wails';
 import { Toast } from '../components/common/Toast';
 import { NIDCheckerModal } from '../components/NIDCheckerModal';
+import { StudentDetailsModal } from '../components/StudentDetailsModal';
 
 const stages: StageType[] = ['حضانات (KG)', 'ابتدائي', 'إعدادي', 'ثانوي', 'جامعة'];
 
@@ -120,13 +121,13 @@ const schoolGrades: Record<string, string[]> = {
     'الصف الثالث الثانوي',
   ],
   'جامعة': [
+    'متخرج',
     'الفرقة الأولى',
     'الفرقة الثانية',
     'الفرقة الثالثة',
     'الفرقة الرابعة',
     'الفرقة الخامسة',
     'الفرقة السادسة',
-    'متخرج',
   ],
 };
 
@@ -175,6 +176,11 @@ export const Dashboard: React.FC = () => {
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   const [nidCheckerOpen, setNidCheckerOpen] = useState(false);
+  // Church Name flow
+  const [churchName, setChurchName] = useState<string>(() => localStorage.getItem('churchName') || 'كنيسة مارجرجس');
+  const [churchModalOpen, setChurchModalOpen] = useState(false);
+  const [churchInputName, setChurchInputName] = useState('');
+  const [isSavingChurch, setIsSavingChurch] = useState(false);
   // Wipe Database flow
   const [wipeDialogOpen, setWipeDialogOpen] = useState(false);
   const [wipeConfirmText, setWipeConfirmText] = useState('');
@@ -201,6 +207,7 @@ export const Dashboard: React.FC = () => {
   // Table Action Menu State
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [detailsStudent, setDetailsStudent] = useState<Student | null>(null);
 
   const [parsedNIDInfo, setParsedNIDInfo] = useState<{
     birthDate?: string;
@@ -217,6 +224,25 @@ export const Dashboard: React.FC = () => {
   useEffect(() => {
     fetchStudents();
     refreshSummary();
+
+    const fetchChurchSettings = async () => {
+      try {
+        const app = (window as any).go?.main?.App;
+        if (app?.GetChurchName) {
+          const res = await app.GetChurchName();
+          if (res && res.trim() !== '') {
+            setChurchName(res);
+            localStorage.setItem('churchName', res);
+          } else {
+            setChurchInputName('');
+            setChurchModalOpen(true);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load church name', err);
+      }
+    };
+    fetchChurchSettings();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Global Keyboard Shortcuts (⌘K / Ctrl+K for search)
@@ -236,14 +262,17 @@ export const Dashboard: React.FC = () => {
     defaultValues: {
       id: '',
       fullName: '',
+      familyHead: '',
       nationalId: '',
       stage: activeStage,
       grade: schoolGrades[activeStage]?.[0] || '',
+      schoolName: '',
       track: activeStage === 'ثانوي' ? 'عام' : '',
       universityName: '',
       faculty: '',
       studyYears: '4 سنوات (معظم الكليات)',
       universityYear: '',
+      churchFamilyId: '',
       cathedralStudentId: '',
       cathedralFamilyId: '',
       alexandriaStudentId: '',
@@ -277,9 +306,13 @@ export const Dashboard: React.FC = () => {
       setSaveStatusText('جارٍ الحفظ...');
 
       try {
+        const isUni = value.stage === 'جامعة';
+        const resolvedGrade = isUni ? (value.universityYear || value.grade || 'الفرقة الأولى') : value.grade;
         const studentToSave: Student = {
           ...(value as Student),
           id: editingStudentId || value.id || '',
+          grade: resolvedGrade,
+          universityYear: isUni ? resolvedGrade : (value.universityYear || ''),
           photoPath: photoPreview || value.photoPath || '',
         };
 
@@ -503,6 +536,87 @@ export const Dashboard: React.FC = () => {
     }
   };
 
+  const [isExporting, setIsExporting] = useState(false);
+  const [isGeneratingTemplate, setIsGeneratingTemplate] = useState(false);
+
+  const handleExportExcel = async () => {
+    try {
+      setIsExporting(true);
+      const app = (window as any).go?.main?.App;
+      if (!app?.ExportStudentsToExcel) {
+        setToastSeverity('error');
+        setToastMessage('خدمة التصدير غير متوفرة في بيئة الويب');
+        setToastOpen(true);
+        return;
+      }
+      const stageParam = (activeStage as string) === 'الكل' ? '' : (activeStage || '');
+      await app.ExportStudentsToExcel('', stageParam, churchName);
+      setToastSeverity('success');
+      setToastMessage(`تم تصدير كشوفات الطلاب لـ (${churchName}) بنجاح`);
+      setToastOpen(true);
+    } catch (err: any) {
+      console.error('Export error:', err);
+      setToastSeverity('error');
+      setToastMessage(`فشل التصدير: ${err?.message || err || 'حدث خطأ أثناء التصدير'}`);
+      setToastOpen(true);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportTemplate = async () => {
+    try {
+      setIsGeneratingTemplate(true);
+      const app = (window as any).go?.main?.App;
+      if (!app?.ExportBlankTemplate) {
+        setToastSeverity('error');
+        setToastMessage('خدمة تصدير القالب غير متوفرة في بيئة الويب');
+        setToastOpen(true);
+        return;
+      }
+      await app.ExportBlankTemplate('', churchName);
+      setToastSeverity('success');
+      setToastMessage('تم حفظ قالب استيراد Excel مع القوائم المنسدلة وشيت التعليمات');
+      setToastOpen(true);
+    } catch (err: any) {
+      console.error('Template export error:', err);
+      setToastSeverity('error');
+      setToastMessage(`فشل إنشاء القالب: ${err?.message || err || 'حدث خطأ أثناء الحفظ'}`);
+      setToastOpen(true);
+    } finally {
+      setIsGeneratingTemplate(false);
+    }
+  };
+
+  const handleSaveChurchName = async (customName?: string) => {
+    const val = (customName !== undefined ? customName : churchInputName).trim();
+    if (!val) {
+      setToastSeverity('error');
+      setToastMessage('يرجى كتابة اسم الكنيسة');
+      setToastOpen(true);
+      return;
+    }
+    setIsSavingChurch(true);
+    try {
+      const app = (window as any).go?.main?.App;
+      if (app?.SetChurchName) {
+        await app.SetChurchName(val);
+      }
+      setChurchName(val);
+      localStorage.setItem('churchName', val);
+      setChurchModalOpen(false);
+      setToastSeverity('success');
+      setToastMessage(`تم حفظ اسم الكنيسة: ${val}`);
+      setToastOpen(true);
+    } catch (err: any) {
+      setToastSeverity('error');
+      setToastMessage(`تعذر حفظ اسم الكنيسة: ${err?.message || err}`);
+      setToastOpen(true);
+    } finally {
+      setIsSavingChurch(false);
+    }
+  };
+
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, student: Student) => {
     setAnchorEl(event.currentTarget);
     setSelectedStudent(student);
@@ -519,6 +633,11 @@ export const Dashboard: React.FC = () => {
       Object.keys(selectedStudent).forEach((key) => {
         form.setFieldValue(key as any, (selectedStudent as any)[key]);
       });
+      if (selectedStudent.stage === 'جامعة') {
+        const uniYr = selectedStudent.universityYear || selectedStudent.grade || 'الفرقة الأولى';
+        form.setFieldValue('universityYear', uniYr);
+        form.setFieldValue('grade', uniYr);
+      }
       if (selectedStudent.photoPath) {
         setPhotoPreview(selectedStudent.photoPath);
       }
@@ -592,9 +711,12 @@ export const Dashboard: React.FC = () => {
 
   const columnLabels: Record<string, string> = {
     fullName: 'اسم الطالب الرباعي',
+    familyHead: 'اسم رب الأسرة',
     nationalId: 'الرقم القومي',
     grade: 'المرحلة والصف',
-    phone: 'رقم الهاتف',
+    schoolName: 'اسم المدرسة',
+    phone: 'رقم التليفون',
+    churchFamilyId: 'رقم الأسرة بكشوفات الكنيسة',
     cathedralStudentId: 'رقم الطالب بالرعاية',
     cathedralFamilyId: 'رقم الأسرة بالرعاية',
     alexandriaStudentId: 'رقم الطالب بالعضوية',
@@ -676,6 +798,19 @@ export const Dashboard: React.FC = () => {
           </Box>
         ),
       }),
+      columnHelper.accessor('familyHead', {
+        id: 'familyHead',
+        header: 'اسم رب الأسرة',
+        enableSorting: true,
+        cell: (info) => {
+          const val = info.getValue() || (info.row.original as any).FamilyHead;
+          return (
+            <Typography variant="body2" color="#334155" sx={{ textAlign: 'start' }}>
+              {val || '—'}
+            </Typography>
+          );
+        },
+      }),
       columnHelper.accessor('nationalId', {
         id: 'nationalId',
         header: 'الرقم القومي',
@@ -728,7 +863,11 @@ export const Dashboard: React.FC = () => {
             />
             <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.3, fontWeight: 600 }}>
               {info.row.original.stage === 'جامعة'
-                ? `${info.row.original.universityName || ''} - ${info.row.original.faculty || ''}`
+                ? [
+                    info.row.original.universityYear || info.row.original.grade || 'متخرج',
+                    info.row.original.faculty,
+                    info.row.original.universityName,
+                  ].filter(Boolean).join(' • ')
                 : info.row.original.stage === 'ثانوي' && info.row.original.track
                 ? `${info.row.original.grade || 'المرحلة الثانوية'} (${info.row.original.track})`
                 : info.row.original.grade || '—'}
@@ -736,15 +875,48 @@ export const Dashboard: React.FC = () => {
           </Box>
         ),
       }),
+      columnHelper.accessor('schoolName', {
+        id: 'schoolName',
+        header: 'اسم المدرسة',
+        enableSorting: true,
+        cell: (info) => {
+          const val = info.getValue() || (info.row.original as any).SchoolName;
+          return (
+            <Typography variant="body2" color="#475569" sx={{ textAlign: 'start' }}>
+              {val || '—'}
+            </Typography>
+          );
+        },
+      }),
       columnHelper.accessor('phone', {
         id: 'phone',
-        header: 'رقم الهاتف',
+        header: 'رقم التليفون',
         enableSorting: true,
         cell: (info) => {
           const p = info.getValue() || info.row.original.parentPhone;
           return (
+            <Box sx={{ textAlign: 'start' }}>
+              <Typography variant="body2" sx={{ fontFamily: 'monospace', color: '#475569' }}>
+                {p || '—'}
+              </Typography>
+              {info.row.original.parentPhone && info.getValue() && info.getValue() !== info.row.original.parentPhone && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontFamily: 'monospace' }}>
+                  ولي الأمر: {info.row.original.parentPhone}
+                </Typography>
+              )}
+            </Box>
+          );
+        },
+      }),
+      columnHelper.accessor('churchFamilyId', {
+        id: 'churchFamilyId',
+        header: 'رقم الأسرة بكشوفات الكنيسة',
+        enableSorting: true,
+        cell: (info) => {
+          const val = info.getValue() || (info.row.original as any).ChurchFamilyID;
+          return (
             <Typography variant="body2" sx={{ fontFamily: 'monospace', color: '#475569', textAlign: 'start' }}>
-              {p || '—'}
+              {val || '—'}
             </Typography>
           );
         },
@@ -857,31 +1029,51 @@ export const Dashboard: React.FC = () => {
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between', p: 2 }}>
       <Box>
         {/* Church Branding Header */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2.5, px: 0.5, pt: 0.5 }}>
+        <Tooltip title="انقر لتعديل اسم الكنيسة" arrow placement="bottom">
           <Box
+            onClick={() => {
+              setChurchInputName(churchName);
+              setChurchModalOpen(true);
+            }}
             sx={{
-              width: 42,
-              height: 42,
-              borderRadius: 2.5,
-              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-              color: '#ffffff',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
+              gap: 1.5,
+              mb: 2.5,
+              px: 1,
+              py: 0.8,
+              borderRadius: 2,
+              cursor: 'pointer',
+              '&:hover': { bgcolor: '#f1f5f9' },
+              transition: 'all 150ms ease',
             }}
           >
-            <Church size={22} />
+            <Box
+              sx={{
+                width: 42,
+                height: 42,
+                borderRadius: 2.5,
+                background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
+                flexShrink: 0,
+              }}
+            >
+              <Church size={22} />
+            </Box>
+            <Box sx={{ textAlign: 'start', minWidth: 0, flexGrow: 1 }}>
+              <Typography variant="subtitle1" fontWeight={800} color="#0f172a" sx={{ lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {churchName}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                خدمة أسر إخوة الرب • تعديل
+              </Typography>
+            </Box>
           </Box>
-          <Box sx={{ textAlign: 'start' }}>
-            <Typography variant="subtitle1" fontWeight={800} color="#0f172a" sx={{ lineHeight: 1.2 }}>
-              كنيسة مارجرجس
-            </Typography>
-            <Typography variant="caption" color="text.secondary" fontWeight={600}>
-              خدمة أسر إخوة الرب
-            </Typography>
-          </Box>
-        </Box>
+        </Tooltip>
 
         <Divider sx={{ mb: 2 }} />
 
@@ -1020,7 +1212,7 @@ export const Dashboard: React.FC = () => {
   );
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#f8fafc' }}>
+    <Box sx={{ display: 'flex', height: '100%', width: '100%', bgcolor: '#f8fafc', overflow: 'hidden' }}>
       <Toast
         open={toastOpen}
         message={toastMessage}
@@ -1037,9 +1229,8 @@ export const Dashboard: React.FC = () => {
             flexShrink: 0,
             bgcolor: '#ffffff',
             borderLeft: '1px solid #e2e8f0',
-            height: '100vh',
-            position: 'sticky',
-            top: 0,
+            height: '100%',
+            overflowY: 'auto',
           }}
         >
           {renderSidebarContent()}
@@ -1059,7 +1250,7 @@ export const Dashboard: React.FC = () => {
       )}
 
       {/* MAIN CONTENT AREA */}
-      <Box sx={{ flexGrow: 1, p: { xs: 2, sm: 3 }, overflowY: 'auto', minWidth: 0 }}>
+      <Box sx={{ flexGrow: 1, height: '100%', p: { xs: 2, sm: 3 }, overflowY: 'auto', minWidth: 0 }}>
         {/* PAGE HEADER */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2, mb: 3.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, textAlign: 'start' }}>
@@ -1076,7 +1267,7 @@ export const Dashboard: React.FC = () => {
                 كشف طلبة المدارس لأسر إخوة الرب
               </Typography>
               <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 0.3 }}>
-                كنيسة مارجرجس • مرحلة <strong style={{ color: '#2563eb' }}>{activeStage}</strong>
+                {churchName} • مرحلة <strong style={{ color: '#2563eb' }}>{activeStage}</strong>
               </Typography>
             </Box>
           </Box>
@@ -1126,7 +1317,7 @@ export const Dashboard: React.FC = () => {
             </Button>
             <Button
               variant="outlined"
-              startIcon={importing ? <CircularProgress size={16} color="inherit" /> : <FileSpreadsheet size={17} color="#059669" />}
+              startIcon={importing ? <CircularProgress size={16} color="inherit" /> : <Upload size={17} color="#059669" />}
               onClick={handleStartExcelImport}
               disabled={importing}
               sx={{
@@ -1143,6 +1334,26 @@ export const Dashboard: React.FC = () => {
               }}
             >
               استيراد Excel
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={isGeneratingTemplate ? <CircularProgress size={16} color="inherit" /> : <FileSpreadsheet size={17} color="#0d9488" />}
+              onClick={handleExportTemplate}
+              disabled={isGeneratingTemplate}
+              sx={{
+                py: 1,
+                px: 2,
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                borderRadius: 2,
+                borderColor: '#99f6e4',
+                color: '#0f766e',
+                bgcolor: '#ffffff',
+                '&:hover': { bgcolor: '#f0fdfa', borderColor: '#14b8a6', transform: 'translateY(-1px)' },
+                transition: 'all 200ms ease',
+              }}
+            >
+              {isGeneratingTemplate ? 'جاري التوليد...' : 'قالب استيراد Excel'}
             </Button>
             <Button
               variant="outlined"
@@ -1164,7 +1375,9 @@ export const Dashboard: React.FC = () => {
             </Button>
             <Button
               variant="outlined"
-              startIcon={<Upload size={16} color="#475569" />}
+              startIcon={isExporting ? <CircularProgress size={16} color="inherit" /> : <Download size={16} color="#475569" />}
+              onClick={handleExportExcel}
+              disabled={isExporting}
               sx={{
                 py: 1,
                 px: 2,
@@ -1178,7 +1391,7 @@ export const Dashboard: React.FC = () => {
                 transition: 'all 200ms ease',
               }}
             >
-              تصدير Excel
+              {isExporting ? 'جاري التصدير...' : 'تصدير Excel'}
             </Button>
             <Button
               variant="outlined"
@@ -1658,9 +1871,17 @@ export const Dashboard: React.FC = () => {
                     return (
                       <tr
                         key={row.id}
+                        onClick={(e) => {
+                          const target = e.target as HTMLElement;
+                          if (target.closest('button') || target.closest('input[type="checkbox"]') || target.closest('.MuiCheckbox-root')) {
+                            return;
+                          }
+                          setDetailsStudent(row.original);
+                        }}
                         style={{
                           borderBottom: '1px solid #f1f5f9',
                           backgroundColor: isSelected ? '#eff6ff' : 'transparent',
+                          cursor: 'pointer',
                           transition: 'background-color 0.15s ease',
                         }}
                         onMouseEnter={(e) => {
@@ -2114,6 +2335,25 @@ export const Dashboard: React.FC = () => {
                   </Grid>
 
                   <Grid item xs={12} md={6}>
+                    <form.Field name="familyHead">
+                      {(field) => (
+                        <>
+                          <FieldLabel>اسم رب الأسرة (اختياري)</FieldLabel>
+                          <TextField
+                            fullWidth
+                            name={field.name}
+                            value={field.state.value || ''}
+                            onBlur={field.handleBlur}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="اسم رب الأسرة / العائل"
+                            inputProps={{ style: { textAlign: 'start' } }}
+                          />
+                        </>
+                      )}
+                    </form.Field>
+                  </Grid>
+
+                  <Grid item xs={12}>
                     <form.Field
                       name="nationalId"
                       validators={{
@@ -2245,24 +2485,68 @@ export const Dashboard: React.FC = () => {
                   {(currentStage) =>
                     currentStage === 'جامعة' ? (
                       <Grid container spacing={2}>
-                        <Grid item xs={12} sm={6} md={3}>
-                          <form.Field name="universityName">
+                        <Grid item xs={12} sm={6} md={2.4}>
+                          <form.Field name="stage">
                             {(field) => (
                               <>
-                                <FieldLabel required>الجامعة / المعهد</FieldLabel>
-                                <TextField
-                                  fullWidth
-                                  placeholder="اسم الجامعة أو المعهد"
-                                  value={field.state.value || ''}
-                                  onChange={(e) => field.handleChange(e.target.value)}
-                                  inputProps={{ style: { textAlign: 'start' } }}
-                                />
+                                <FieldLabel required>المرحلة الحالية</FieldLabel>
+                                <FormControl fullWidth size="small">
+                                  <Select
+                                    value={field.state.value || 'جامعة'}
+                                    onChange={(e) => {
+                                      const newStage = e.target.value as StageType;
+                                      field.handleChange(newStage);
+                                      if (newStage === 'جامعة') {
+                                        const uniYr = form.getFieldValue('universityYear') || 'متخرج';
+                                        form.setFieldValue('grade', uniYr);
+                                        form.setFieldValue('universityYear', uniYr);
+                                      } else {
+                                        form.setFieldValue('grade', schoolGrades[newStage]?.[0] || '');
+                                      }
+                                    }}
+                                    sx={{ textAlign: 'start' }}
+                                  >
+                                    {stages.map((stg) => (
+                                      <MenuItem key={stg} value={stg}>
+                                        {stg}
+                                      </MenuItem>
+                                    ))}
+                                  </Select>
+                                </FormControl>
                               </>
                             )}
                           </form.Field>
                         </Grid>
 
-                        <Grid item xs={12} sm={6} md={3}>
+                        <Grid item xs={12} sm={6} md={2.4}>
+                          <form.Field name="universityYear">
+                            {(field) => (
+                              <>
+                                <FieldLabel required>الفرقة الدراسية / الحالة</FieldLabel>
+                                <FormControl fullWidth size="small">
+                                  <Select
+                                    value={field.state.value || 'متخرج'}
+                                    displayEmpty
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      field.handleChange(val);
+                                      form.setFieldValue('grade', val);
+                                    }}
+                                    sx={{ textAlign: 'start' }}
+                                  >
+                                    {schoolGrades['جامعة'].map((yr) => (
+                                      <MenuItem key={yr} value={yr}>
+                                        {yr}
+                                      </MenuItem>
+                                    ))}
+                                  </Select>
+                                </FormControl>
+                              </>
+                            )}
+                          </form.Field>
+                        </Grid>
+
+                        <Grid item xs={12} sm={6} md={2.4}>
                           <form.Field name="faculty">
                             {(field) => (
                               <>
@@ -2279,11 +2563,28 @@ export const Dashboard: React.FC = () => {
                           </form.Field>
                         </Grid>
 
-                        <Grid item xs={12} sm={6} md={3}>
+                        <Grid item xs={12} sm={6} md={2.4}>
+                          <form.Field name="universityName">
+                            {(field) => (
+                              <>
+                                <FieldLabel required>الجامعة / المعهد</FieldLabel>
+                                <TextField
+                                  fullWidth
+                                  placeholder="اسم الجامعة أو المعهد"
+                                  value={field.state.value || ''}
+                                  onChange={(e) => field.handleChange(e.target.value)}
+                                  inputProps={{ style: { textAlign: 'start' } }}
+                                />
+                              </>
+                            )}
+                          </form.Field>
+                        </Grid>
+
+                        <Grid item xs={12} sm={6} md={2.4}>
                           <form.Field name="studyYears">
                             {(field) => (
                               <>
-                                <FieldLabel required>عدد سنين الدراسة</FieldLabel>
+                                <FieldLabel>عدد سنين الدراسة</FieldLabel>
                                 <FormControl fullWidth size="small">
                                   <Select
                                     value={field.state.value || '4 سنوات (معظم الكليات)'}
@@ -2301,37 +2602,10 @@ export const Dashboard: React.FC = () => {
                             )}
                           </form.Field>
                         </Grid>
-
-                        <Grid item xs={12} sm={6} md={3}>
-                          <form.Field name="universityYear">
-                            {(field) => (
-                              <>
-                                <FieldLabel required>الفرقة الدراسية الحالية</FieldLabel>
-                                <FormControl fullWidth size="small">
-                                  <Select
-                                    value={field.state.value || ''}
-                                    displayEmpty
-                                    onChange={(e) => field.handleChange(e.target.value)}
-                                    sx={{ textAlign: 'start' }}
-                                  >
-                                    <MenuItem value="" disabled>
-                                      <span style={{ color: '#94a3b8' }}>اختر الفرقة الدراسية</span>
-                                    </MenuItem>
-                                    {schoolGrades['جامعة'].map((yr) => (
-                                      <MenuItem key={yr} value={yr}>
-                                        {yr}
-                                      </MenuItem>
-                                    ))}
-                                  </Select>
-                                </FormControl>
-                              </>
-                            )}
-                          </form.Field>
-                        </Grid>
                       </Grid>
                     ) : currentStage === 'ثانوي' ? (
                       <Grid container spacing={2}>
-                        <Grid item xs={12} sm={4}>
+                        <Grid item xs={12} sm={6} md={3}>
                           <form.Field name="stage">
                             {(field) => (
                               <>
@@ -2361,7 +2635,7 @@ export const Dashboard: React.FC = () => {
                           </form.Field>
                         </Grid>
 
-                        <Grid item xs={12} sm={4}>
+                        <Grid item xs={12} sm={6} md={3}>
                           <form.Field name="grade">
                             {(field) => (
                               <>
@@ -2384,7 +2658,7 @@ export const Dashboard: React.FC = () => {
                           </form.Field>
                         </Grid>
 
-                        <Grid item xs={12} sm={4}>
+                        <Grid item xs={12} sm={6} md={3}>
                           <form.Field name="track">
                             {(field) => (
                               <>
@@ -2406,10 +2680,27 @@ export const Dashboard: React.FC = () => {
                             )}
                           </form.Field>
                         </Grid>
+
+                        <Grid item xs={12} sm={6} md={3}>
+                          <form.Field name="schoolName">
+                            {(field) => (
+                              <>
+                                <FieldLabel>اسم المدرسة (اختياري)</FieldLabel>
+                                <TextField
+                                  fullWidth
+                                  placeholder="اسم المدرسة الثانوية"
+                                  value={field.state.value || ''}
+                                  onChange={(e) => field.handleChange(e.target.value)}
+                                  inputProps={{ style: { textAlign: 'start' } }}
+                                />
+                              </>
+                            )}
+                          </form.Field>
+                        </Grid>
                       </Grid>
                     ) : (
                       <Grid container spacing={2}>
-                        <Grid item xs={12} md={6}>
+                        <Grid item xs={12} sm={6} md={4}>
                           <form.Field name="stage">
                             {(field) => (
                               <>
@@ -2436,7 +2727,7 @@ export const Dashboard: React.FC = () => {
                           </form.Field>
                         </Grid>
 
-                        <Grid item xs={12} md={6}>
+                        <Grid item xs={12} sm={6} md={4}>
                           <form.Field name="grade">
                             {(field) => (
                               <>
@@ -2458,6 +2749,23 @@ export const Dashboard: React.FC = () => {
                             )}
                           </form.Field>
                         </Grid>
+
+                        <Grid item xs={12} md={4}>
+                          <form.Field name="schoolName">
+                            {(field) => (
+                              <>
+                                <FieldLabel>اسم المدرسة (اختياري)</FieldLabel>
+                                <TextField
+                                  fullWidth
+                                  placeholder="اسم المدرسة أو الحضانة"
+                                  value={field.state.value || ''}
+                                  onChange={(e) => field.handleChange(e.target.value)}
+                                  inputProps={{ style: { textAlign: 'start' } }}
+                                />
+                              </>
+                            )}
+                          </form.Field>
+                        </Grid>
                       </Grid>
                     )
                   }
@@ -2466,7 +2774,75 @@ export const Dashboard: React.FC = () => {
 
               <Divider sx={{ my: 2.5 }} />
 
-              {/* SECTION 3: بيانات الرعاية والعضوية */}
+              {/* SECTION 3: بيانات التواصل والعنوان */}
+              <Box sx={{ mb: 3 }}>
+                <Typography
+                  variant="subtitle1"
+                  fontWeight={800}
+                  color="#2563eb"
+                  sx={{ display: 'flex', alignItems: 'center', gap: 0.8, mb: 1.5, textAlign: 'start' }}
+                >
+                  <Phone size={18} color="#2563eb" />
+                  <span>3. بيانات التواصل والعنوان</span>
+                </Typography>
+
+                <Grid container spacing={2}>
+                  <Grid item xs={12} sm={6} md={4}>
+                    <form.Field name="phone">
+                      {(field) => (
+                        <>
+                          <FieldLabel>رقم التليفون (اختياري)</FieldLabel>
+                          <TextField
+                            fullWidth
+                            value={field.state.value || ''}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="01xxxxxxxxx"
+                            inputProps={{ style: { textAlign: 'start', fontFamily: 'monospace' } }}
+                          />
+                        </>
+                      )}
+                    </form.Field>
+                  </Grid>
+
+                  <Grid item xs={12} sm={6} md={4}>
+                    <form.Field name="parentPhone">
+                      {(field) => (
+                        <>
+                          <FieldLabel>هاتف ولي الأمر (اختياري)</FieldLabel>
+                          <TextField
+                            fullWidth
+                            value={field.state.value || ''}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="01xxxxxxxxx"
+                            inputProps={{ style: { textAlign: 'start', fontFamily: 'monospace' } }}
+                          />
+                        </>
+                      )}
+                    </form.Field>
+                  </Grid>
+
+                  <Grid item xs={12} md={4}>
+                    <form.Field name="address">
+                      {(field) => (
+                        <>
+                          <FieldLabel>العنوان (اختياري)</FieldLabel>
+                          <TextField
+                            fullWidth
+                            value={field.state.value || ''}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="الشارع / المنطقة / العمارة"
+                            inputProps={{ style: { textAlign: 'start' } }}
+                          />
+                        </>
+                      )}
+                    </form.Field>
+                  </Grid>
+                </Grid>
+              </Box>
+
+              <Divider sx={{ my: 2.5 }} />
+
+              {/* SECTION 4: بيانات برنامج الرعاية الكنسية والعضوية الكنسية */}
               <Box sx={{ mb: 3 }}>
                 <Typography
                   variant="subtitle1"
@@ -2475,11 +2851,28 @@ export const Dashboard: React.FC = () => {
                   sx={{ display: 'flex', alignItems: 'center', gap: 0.8, mb: 1.5, textAlign: 'start' }}
                 >
                   <Building size={18} color="#2563eb" />
-                  <span>3. بيانات برنامج الرعاية الكنسية والعضوية الكنسية</span>
+                  <span>4. بيانات برنامج الرعاية الكنسية والعضوية الكنسية</span>
                 </Typography>
 
                 <Grid container spacing={2}>
-                  <Grid item xs={12} sm={6} md={3}>
+                  <Grid item xs={12} sm={6} md={4}>
+                    <form.Field name="churchFamilyId">
+                      {(field) => (
+                        <>
+                          <FieldLabel>رقم الأسرة بكشوفات الكنيسة (اختياري)</FieldLabel>
+                          <TextField
+                            fullWidth
+                            value={field.state.value || ''}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            placeholder="رقم الأسرة بكشوفات الكنيسة"
+                            inputProps={{ style: { textAlign: 'start' } }}
+                          />
+                        </>
+                      )}
+                    </form.Field>
+                  </Grid>
+
+                  <Grid item xs={12} sm={6} md={4}>
                     <form.Field
                       name="cathedralStudentId"
                       validators={{
@@ -2494,7 +2887,7 @@ export const Dashboard: React.FC = () => {
                             required
                             value={field.state.value || ''}
                             onChange={(e) => field.handleChange(e.target.value)}
-                            placeholder="رقم الطالب في برنامج الرعاية الكنسية"
+                            placeholder="رقم الطالب في برنامج الرعاية"
                             error={Boolean(field.state.meta.errors.length && field.state.meta.isTouched)}
                             helperText={field.state.meta.isTouched ? field.state.meta.errors.join(', ') : undefined}
                             inputProps={{ style: { textAlign: 'start' } }}
@@ -2504,7 +2897,7 @@ export const Dashboard: React.FC = () => {
                     </form.Field>
                   </Grid>
 
-                  <Grid item xs={12} sm={6} md={3}>
+                  <Grid item xs={12} sm={6} md={4}>
                     <form.Field
                       name="cathedralFamilyId"
                       validators={{
@@ -2519,7 +2912,7 @@ export const Dashboard: React.FC = () => {
                             required
                             value={field.state.value || ''}
                             onChange={(e) => field.handleChange(e.target.value)}
-                            placeholder="رقم الأسرة في برنامج الرعاية الكنسية"
+                            placeholder="رقم الأسرة في برنامج الرعاية"
                             error={Boolean(field.state.meta.errors.length && field.state.meta.isTouched)}
                             helperText={field.state.meta.isTouched ? field.state.meta.errors.join(', ') : undefined}
                             inputProps={{ style: { textAlign: 'start' } }}
@@ -2529,7 +2922,7 @@ export const Dashboard: React.FC = () => {
                     </form.Field>
                   </Grid>
 
-                  <Grid item xs={12} sm={6} md={3}>
+                  <Grid item xs={12} sm={6} md={6}>
                     <form.Field name="alexandriaStudentId">
                       {(field) => (
                         <>
@@ -2546,7 +2939,7 @@ export const Dashboard: React.FC = () => {
                     </form.Field>
                   </Grid>
 
-                  <Grid item xs={12} sm={6} md={3}>
+                  <Grid item xs={12} sm={6} md={6}>
                     <form.Field name="alexandriaFamilyId">
                       {(field) => (
                         <>
@@ -2565,7 +2958,7 @@ export const Dashboard: React.FC = () => {
                 </Grid>
               </Box>
 
-              {/* SECTION 4: الملاحظات وصورة الطالب */}
+              {/* SECTION 5: الملاحظات وصورة الطالب */}
               <Box sx={{ mb: 2 }}>
                 <Grid container spacing={2} alignItems="flex-end">
                   <Grid item xs={12} md={8}>
@@ -2707,6 +3100,18 @@ export const Dashboard: React.FC = () => {
 
       {/* Table Context Action Menu */}
       <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose} dir="rtl">
+        <MenuItem
+          onClick={() => {
+            if (selectedStudent) {
+              setDetailsStudent(selectedStudent);
+            }
+            handleMenuClose();
+          }}
+          sx={{ gap: 1, fontSize: '0.88rem', fontWeight: 700, color: '#2563eb' }}
+        >
+          <Eye size={16} />
+          عرض التفاصيل الكاملة
+        </MenuItem>
         <MenuItem onClick={handleEditFromMenu} sx={{ gap: 1, fontSize: '0.88rem' }}>
           <Edit size={16} />
           تعديل البيانات
@@ -2740,6 +3145,93 @@ export const Dashboard: React.FC = () => {
             governorate: data.governorate,
           });
           setFormDialogOpen(true);
+        }}
+      />
+
+      {/* Church Name Setup / Edit Dialog */}
+      <Dialog
+        open={churchModalOpen}
+        onClose={() => setChurchModalOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: { borderRadius: 3, p: 1 },
+        }}
+      >
+        <DialogTitle sx={{ textAlign: 'start', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Church size={24} color="#2563eb" />
+          <Typography variant="h6" fontWeight={800} color="#0f172a">
+            إعداد اسم الكنيسة والخدمة
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 1 }}>
+          <TextField
+            autoFocus
+            fullWidth
+            label="اسم الكنيسة"
+            placeholder="مثال: كنيسة الشهيد مارجرجس"
+            value={churchInputName}
+            onChange={(e) => setChurchInputName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleSaveChurchName();
+              }
+            }}
+            size="small"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Church size={18} color="#64748b" />
+                </InputAdornment>
+              ),
+            }}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setChurchModalOpen(false)} color="inherit" sx={{ fontWeight: 700 }}>
+            إلغاء
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => handleSaveChurchName()}
+            disabled={isSavingChurch || !churchInputName.trim()}
+            sx={{ fontWeight: 700, px: 3, borderRadius: 2 }}
+          >
+            {isSavingChurch ? 'جاري الحفظ...' : 'حفظ اسم الكنيسة'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Student Details Inspection Modal */}
+      <StudentDetailsModal
+        open={Boolean(detailsStudent)}
+        student={detailsStudent}
+        churchName={churchName}
+        onClose={() => setDetailsStudent(null)}
+        onEdit={(student) => {
+          setEditingStudentId(student.id);
+          Object.keys(student).forEach((key) => {
+            form.setFieldValue(key as any, (student as any)[key]);
+          });
+          if (student.stage === 'جامعة') {
+            const uniYr = student.universityYear || student.grade || 'الفرقة الأولى';
+            form.setFieldValue('universityYear', uniYr);
+            form.setFieldValue('grade', uniYr);
+          }
+          if (student.photoPath) {
+            setPhotoPreview(student.photoPath);
+          }
+          if (student.nationalId) {
+            handleNIDValidation(student.nationalId);
+          }
+          setFormDialogOpen(true);
+        }}
+        onDelete={async (student) => {
+          await deleteStudent(student.id);
+          setToastSeverity('info');
+          setToastMessage('تم حذف الطالب من السجل');
+          setToastOpen(true);
         }}
       />
     </Box>
