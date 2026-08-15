@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Typography, IconButton, Tooltip } from '@mui/material';
-import { Church, Minus, Square, Copy, X } from 'lucide-react';
+import { Minus, Square, Copy, X } from 'lucide-react';
+import appIcon from '../../assets/images/app-icon.png';
 
 declare global {
   interface Window {
@@ -47,16 +48,18 @@ export const TitleBar: React.FC = () => {
   return (
     <Box
       data-wails-drag
+      style={{
+        // Inline styles are not flipped by stylis-plugin-rtl
+        paddingLeft: isMac ? '85px' : '16px',
+        paddingRight: '16px',
+      }}
       sx={{
-        height: 38,
+        height: 40,
         bgcolor: '#ffffff',
         borderBottom: '1px solid #e2e8f0',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        px: 2,
-        // On macOS, leave 75px clearance on the left for native traffic lights (🔴 🟡 🟢)
-        pl: isMac ? '80px' : 2,
         userSelect: 'none',
         '--wails-draggable': 'drag',
         WebkitAppRegion: 'drag',
@@ -65,31 +68,29 @@ export const TitleBar: React.FC = () => {
         position: 'sticky',
         top: 0,
         zIndex: 1300,
+        boxShadow: '0 1px 4px rgba(0,0,0,0.02)',
       } as any}
       onDoubleClick={handleToggleMaximize}
     >
       {/* App Branding & Name */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
         <Box
+          component="img"
+          src={appIcon}
+          alt="Ka4f El-Tolab Icon"
           sx={{
-            width: 24,
-            height: 24,
+            width: 26,
+            height: 26,
             borderRadius: '6px',
-            bgcolor: '#eff6ff',
-            color: '#2563eb',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: '1px solid #bfdbfe',
+            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)',
+            objectFit: 'cover',
           }}
-        >
-          <Church size={14} />
-        </Box>
+        />
         <Typography
           variant="subtitle2"
           fontWeight={800}
           color="#0f172a"
-          sx={{ fontFamily: "'Cairo', sans-serif", fontSize: '0.85rem' }}
+          sx={{ fontFamily: "'Cairo', sans-serif", fontSize: '0.86rem', letterSpacing: '-0.2px' }}
         >
           كشف الطلاب <span style={{ color: '#94a3b8', fontWeight: 500, margin: '0 4px' }}>•</span> Ka4f El-Tolab
         </Typography>
@@ -98,11 +99,12 @@ export const TitleBar: React.FC = () => {
           sx={{
             bgcolor: '#f1f5f9',
             color: '#475569',
-            px: 1,
-            py: 0.2,
-            borderRadius: '10px',
+            px: 1.2,
+            py: 0.3,
+            borderRadius: '12px',
             fontWeight: 700,
-            fontSize: '0.7rem',
+            fontSize: '0.72rem',
+            border: '1px solid #e2e8f0',
           }}
         >
           تطبيق رعاية أسر إخوة الرب

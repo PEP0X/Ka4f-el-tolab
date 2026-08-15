@@ -1,115 +1,91 @@
+// Package database provides the SQLite connection pool, versioned migrations,
+// and data-safety primitives (auto-backup, WAL checkpointing).
 package database
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
-	"Ka4f-El-Tolab/internal/models"
+	"Ka4f-El-Tolab/internal/config"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+	gormlogger "gorm.io/gorm/logger"
 )
 
-// InitDB initializes SQLite database using GORM with CGO-free pure Go driver, WAL mode, and auto-migrations
-func InitDB(dbPath string) (*gorm.DB, error) {
-	dir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create database directory: %w", err)
+// Open creates a production-grade SQLite connection with WAL, foreign keys,
+// and a bounded connection pool suitable for a desktop application.
+func Open(paths config.Paths) (*gorm.DB, error) {
+	if err := paths.Ensure(); err != nil {
+		return nil, fmt.Errorf("create config directories: %w", err)
 	}
 
-	// Connect using pure Go SQLite driver (CGO-free for cross-compilation)
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
+	db, err := gorm.Open(sqlite.Open(paths.DBPath), &gorm.Config{
+		Logger:                 gormlogger.Default.LogMode(gormlogger.Warn),
+		SkipDefaultTransaction: true, // we manage transactions explicitly
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to open GORM database: %w", err)
+		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	// Performance PRAGMAs for SQLite
 	sqlDB, err := db.DB()
-	if err == nil {
-		pragmas := []string{
-			"PRAGMA journal_mode=WAL;",
-			"PRAGMA foreign_keys=ON;",
-			"PRAGMA synchronous=NORMAL;",
-			"PRAGMA busy_timeout=5000;",
-		}
-		for _, pragma := range pragmas {
-			_, _ = sqlDB.Exec(pragma)
-		}
+	if err != nil {
+		return nil, fmt.Errorf("get underlying sql.DB: %w", err)
 	}
 
-	// GORM AutoMigrate models
-	if err := db.AutoMigrate(&models.Student{}, &models.ChurchSettings{}); err != nil {
-		return nil, fmt.Errorf("failed to auto-migrate GORM models: %w", err)
+	// Desktop app: single writer, multiple readers
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
+	sqlDB.SetConnMaxLifetime(0)
+
+	pragmas := []string{
+		"PRAGMA journal_mode=WAL;",
+		"PRAGMA foreign_keys=ON;",
+		"PRAGMA synchronous=NORMAL;",
+		"PRAGMA busy_timeout=5000;",
+		"PRAGMA wal_autocheckpoint=1000;",
+	}
+	for _, p := range pragmas {
+		if _, err := sqlDB.Exec(p); err != nil {
+			slog.Warn("pragma failed", "pragma", p, "error", err)
+		}
 	}
 
 	return db, nil
 }
 
-// GetStudents fetches students filtered by stage and search query using GORM
-func GetStudents(db *gorm.DB, stage string, search string) ([]models.Student, error) {
-	var students []models.Student
-	tx := db.Model(&models.Student{})
-
-	if stage != "" && stage != "الكل" && stage != "All" {
-		tx = tx.Where("stage = ?", stage)
+// Backup creates a timestamped copy of the database file.
+// Call before any destructive operation (delete-all, migration, etc.).
+func Backup(paths config.Paths) (string, error) {
+	if _, err := os.Stat(paths.DBPath); os.IsNotExist(err) {
+		return "", nil // nothing to back up
 	}
 
-	if search != "" {
-		searchParam := "%" + search + "%"
-		tx = tx.Where(
-			"full_name LIKE ? OR national_id LIKE ? OR phone LIKE ? OR cathedral_student_id LIKE ? OR cathedral_family_id LIKE ?",
-			searchParam, searchParam, searchParam, searchParam, searchParam,
-		)
+	ts := time.Now().Format("20060102-150405")
+	backupPath := filepath.Join(paths.BackupDir, fmt.Sprintf("students-%s.db", ts))
+
+	data, err := os.ReadFile(paths.DBPath)
+	if err != nil {
+		return "", fmt.Errorf("read database for backup: %w", err)
+	}
+	if err := os.WriteFile(backupPath, data, 0644); err != nil {
+		return "", fmt.Errorf("write backup: %w", err)
 	}
 
-	if err := tx.Order("full_name ASC").Find(&students).Error; err != nil {
-		return nil, err
-	}
-
-	if students == nil {
-		students = []models.Student{}
-	}
-
-	return students, nil
+	slog.Info("database backed up", "path", backupPath)
+	return backupPath, nil
 }
 
-// AddStudent saves or updates a student record in GORM (Upsert)
-func AddStudent(db *gorm.DB, s models.Student) error {
-	return db.Save(&s).Error
-}
-
-// DeleteStudent removes a student record by ID in GORM
-func DeleteStudent(db *gorm.DB, id string) error {
-	return db.Where("id = ?", id).Delete(&models.Student{}).Error
-}
-
-// GetStageCounts calculates real-time student counts grouped by stage in GORM
-func GetStageCounts(db *gorm.DB) (map[string]int, error) {
-	counts := map[string]int{
-		"حضانات": 0,
-		"ابتدائي": 0,
-		"إعدادي":  0,
-		"ثانوي":   0,
-		"جامعة":   0,
+// Checkpoint forces a WAL checkpoint, flushing all WAL data into the main DB file.
+// This is critical after bulk writes to ensure data survives process restarts.
+func Checkpoint(db *gorm.DB) error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
 	}
-
-	type StageResult struct {
-		Stage string
-		Count int
-	}
-
-	var results []StageResult
-	if err := db.Model(&models.Student{}).Select("stage, count(*) as count").Group("stage").Scan(&results).Error; err != nil {
-		return counts, err
-	}
-
-	for _, res := range results {
-		counts[res.Stage] = res.Count
-	}
-
-	return counts, nil
+	_, err = sqlDB.Exec("PRAGMA wal_checkpoint(TRUNCATE);")
+	return err
 }

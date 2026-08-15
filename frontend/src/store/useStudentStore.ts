@@ -1,23 +1,6 @@
 import { create } from 'zustand';
 import { Student, StageType, NIDData } from '../types/student';
-
-declare global {
-  interface Window {
-    go?: {
-      main?: {
-        App?: {
-          GetStudents: (stage: string, search: string) => Promise<Student[]>;
-          GetStageCounts: () => Promise<Record<string, number>>;
-          AddStudent: (student: Student) => Promise<Student>;
-          DeleteStudent: (id: string) => Promise<void>;
-          ParseNationalID: (nationalId: string) => Promise<NIDData>;
-          ImportStudentsFromExcel: (filePath: string) => Promise<Student[]>;
-          ExportStudentsToExcel: (filePath: string, stage: string) => Promise<void>;
-        };
-      };
-    };
-  }
-}
+import '../types/wails';
 
 interface StudentState {
   students: Student[];
@@ -34,7 +17,19 @@ interface StudentState {
   setSearchQuery: (query: string) => void;
   addStudent: (student: Student) => Promise<void>;
   deleteStudent: (id: string) => Promise<void>;
+  deleteAllData: () => Promise<void>;
   parseNID: (nid: string) => Promise<NIDData>;
+}
+
+async function getWailsApp(maxRetries = 12, delay = 75) {
+  let app = window.go?.main?.App;
+  if (app) return app;
+  for (let i = 0; i < maxRetries; i++) {
+    await new Promise((r) => setTimeout(r, delay));
+    app = window.go?.main?.App;
+    if (app) return app;
+  }
+  return app;
 }
 
 export const useStudentStore = create<StudentState>((set, get) => ({
@@ -53,10 +48,11 @@ export const useStudentStore = create<StudentState>((set, get) => ({
 
   fetchStageCounts: async () => {
     try {
-      if (window.go?.main?.App?.GetStageCounts) {
-        const counts = await window.go.main.App.GetStageCounts();
+      const app = await getWailsApp();
+      if (app?.GetStageCounts) {
+        const counts = await app.GetStageCounts();
         set((state) => ({
-          stageCounts: { ...state.stageCounts, ...counts },
+          stageCounts: { ...state.stageCounts, ...counts, 'حضانات (KG)': counts['حضانات'] ?? state.stageCounts['حضانات (KG)'] },
         }));
       }
     } catch (err) {
@@ -67,58 +63,16 @@ export const useStudentStore = create<StudentState>((set, get) => ({
   fetchStudents: async () => {
     set({ isLoading: true, error: null });
     try {
-      if (window.go?.main?.App?.GetStudents) {
+      const app = await getWailsApp();
+      if (app?.GetStudents) {
         const { activeStage, searchQuery } = get();
         const stageFilter = activeStage.replace(' (KG)', '');
-        const data = await window.go.main.App.GetStudents(stageFilter, searchQuery);
+        const data = await app.GetStudents(stageFilter, searchQuery);
         set({ students: data || [], isLoading: false });
       } else {
-        // Mock data matching reference UI
-        set({
-          students: [
-            {
-              id: '1',
-              fullName: 'يوسف مينا شفيق غالي',
-              nationalId: '30205121601234',
-              gender: 'ذكر',
-              birthDate: '2002-05-12',
-              governorate: 'الغربية',
-              phone: '01234567890',
-              parentPhone: '01012345678',
-              address: 'طنطا - شارع المحطة',
-              stage: 'ابتدائي',
-              grade: 'الصف الرابع الابتدائي',
-              cathedralStudentId: 'CAT-1029',
-              cathedralFamilyId: 'FAM-4021',
-              alexandriaStudentId: 'ALX-9981',
-              alexandriaFamilyId: 'ALX-FAM-102',
-              deaconStatus: true,
-              notes: 'شماس إبصالتس - منتظم في الكنيسة',
-            },
-            {
-              id: '2',
-              fullName: 'مارينا ماجد فرج جرجس',
-              nationalId: '30508240105678',
-              gender: 'أنثى',
-              birthDate: '2005-08-24',
-              governorate: 'القاهرة',
-              phone: '01122334455',
-              parentPhone: '01299887766',
-              address: 'مصر الجديدة - الكوربة',
-              stage: 'ابتدائي',
-              grade: 'الصف الخامس الابتدائي',
-              cathedralStudentId: 'CAT-2041',
-              cathedralFamilyId: 'FAM-8812',
-              alexandriaStudentId: '',
-              alexandriaFamilyId: '',
-              deaconStatus: false,
-              notes: 'مواظبة على اجتماعات الأحد والتأليف الموسيقي',
-            },
-          ],
-          isLoading: false,
-        });
+        set({ students: [], isLoading: false });
       }
-      get().fetchStageCounts();
+      await get().fetchStageCounts();
     } catch (err: any) {
       set({ error: err?.message || 'حدث خطأ أثناء جلب قائمة الطلاب', isLoading: false });
     }
@@ -137,8 +91,9 @@ export const useStudentStore = create<StudentState>((set, get) => ({
   addStudent: async (student: Student) => {
     set({ isLoading: true, error: null });
     try {
-      if (window.go?.main?.App?.AddStudent) {
-        await window.go.main.App.AddStudent(student);
+      const app = window.go?.main?.App;
+      if (app?.AddStudent) {
+        await app.AddStudent(student);
         await get().fetchStudents();
       } else {
         set((state) => ({
@@ -154,8 +109,9 @@ export const useStudentStore = create<StudentState>((set, get) => ({
   deleteStudent: async (id: string) => {
     set({ isLoading: true, error: null });
     try {
-      if (window.go?.main?.App?.DeleteStudent) {
-        await window.go.main.App.DeleteStudent(id);
+      const app = window.go?.main?.App;
+      if (app?.DeleteStudent) {
+        await app.DeleteStudent(id);
         await get().fetchStudents();
       } else {
         set((state) => ({
@@ -168,9 +124,36 @@ export const useStudentStore = create<StudentState>((set, get) => ({
     }
   },
 
+  deleteAllData: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const app = window.go?.main?.App;
+      if (app?.DeleteAllData) {
+        await app.DeleteAllData();
+      }
+      set({
+        students: [],
+        stageCounts: {
+          'حضانات (KG)': 0,
+          'ابتدائي': 0,
+          'إعدادي': 0,
+          'ثانوي': 0,
+          'جامعة': 0,
+        },
+        isLoading: false,
+      });
+      await get().fetchStageCounts();
+      await get().fetchStudents();
+    } catch (err: any) {
+      set({ error: err?.message || 'فشل حذف قاعدة البيانات', isLoading: false });
+      throw err;
+    }
+  },
+
   parseNID: async (nid: string): Promise<NIDData> => {
-    if (window.go?.main?.App?.ParseNationalID) {
-      return await window.go.main.App.ParseNationalID(nid);
+    const app = window.go?.main?.App;
+    if (app?.ParseNationalID) {
+      return await app.ParseNationalID(nid);
     }
     if (nid.length === 14) {
       const yearPrefix = nid[0] === '3' ? '20' : '19';

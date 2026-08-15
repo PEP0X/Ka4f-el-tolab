@@ -4,14 +4,46 @@ import {models} from '../models';
 
 export function AddStudent(arg1:models.Student):Promise<models.Student>;
 
+export function AutosavePendingImportRow(arg1:string,arg2:models.ImportRow):Promise<void>;
+
+export function CommitExcelPreview(arg1:models.ImportPreview):Promise<models.CommitPreviewResult>;
+
+export function DeleteAllData():Promise<void>;
+
 export function DeleteStudent(arg1:string):Promise<void>;
 
+export function ExportImportRejections(arg1:Array<models.ImportRow>):Promise<void>;
+
+export function ExportPendingImportRows(arg1:string):Promise<void>;
+
 export function ExportStudentsToExcel(arg1:string,arg2:string):Promise<void>;
+
+export function GetPendingImportRows(arg1:string):Promise<Array<models.PendingImportRowView>>;
+
+export function GetPendingImportSummary():Promise<models.PendingImportSummary>;
 
 export function GetStageCounts():Promise<Record<string, number>>;
 
 export function GetStudents(arg1:string,arg2:string):Promise<Array<models.Student>>;
 
+export function IgnorePendingImportRow(arg1:string):Promise<void>;
+
+export function ImportStudentBatch(arg1:Array<models.Student>):Promise<models.ImportBatchResult>;
+
 export function ImportStudentsFromExcel(arg1:string):Promise<Array<models.Student>>;
 
 export function ParseNationalID(arg1:string):Promise<models.NIDData>;
+
+export function ParseNationalIDWithStage(arg1:string,arg2:string):Promise<models.NIDData>;
+
+export function PreviewExcelImport(arg1:string):Promise<models.ImportPreview>;
+
+export function ResolvePendingDuplicate(arg1:string,arg2:Array<string>,arg3:models.Student):Promise<models.ImportBatchResult>;
+
+export function ResolvePendingGradeGroup(arg1:string,arg2:string,arg3:string,arg4:string):Promise<number>;
+
+export function ResolvePendingImportRow(arg1:string,arg2:models.Student):Promise<models.ImportBatchResult>;
+
+export function StartExcelImport():Promise<models.ImportPreview>;
+
+export function ValidateImportStudent(arg1:models.Student):Promise<models.StudentValidation>;

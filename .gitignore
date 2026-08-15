@@ -5,6 +5,13 @@ bin/
 *.dll
 *.so
 *.dylib
+Ka4f-El-Tolab
+Ka4f-el-tolab
+
+# Local data / spreadsheet files
+*.xlsx
+*.xls
+
 
 # Node dependencies and build artifacts
 node_modules/

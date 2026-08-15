@@ -80,10 +80,10 @@ func NormalizeID(input string) string {
 	return sb.String()
 }
 
-// FastValidateChecksum calculates the Modulo-11 check digit on a 14-digit slice.
-func FastValidateChecksum(nid string) bool {
+// CalculateChecksum calculates the Modulo-11 check digit on a 14-digit slice.
+func CalculateChecksum(nid string) (bool, int) {
 	if len(nid) != 14 {
-		return false
+		return false, -1
 	}
 
 	sum := 0
@@ -93,11 +93,22 @@ func FastValidateChecksum(nid string) bool {
 
 	remainder := sum % 11
 	checkDigit := (11 - remainder) % 10
-	return int(nid[13]-'0') == checkDigit
+	return int(nid[13]-'0') == checkDigit, checkDigit
+}
+
+// FastValidateChecksum calculates the Modulo-11 check digit on a 14-digit slice.
+func FastValidateChecksum(nid string) bool {
+	valid, _ := CalculateChecksum(nid)
+	return valid
 }
 
 // ParseNationalID is a high-performance, strict validator for Egyptian National IDs with graceful error messages.
 func ParseNationalID(input string) models.NIDData {
+	return ParseNationalIDWithStage(input, "")
+}
+
+// ParseNationalIDWithStage validates an Egyptian National ID and verifies consistency against an educational stage.
+func ParseNationalIDWithStage(input string, stage string) models.NIDData {
 	nid := NormalizeID(input)
 
 	if len(nid) != 14 {
@@ -169,14 +180,8 @@ func ParseNationalID(input string) models.NIDData {
 		}
 	}
 
-	// 4. Graceful Modulo-11 Checksum Engine Error
-	if !FastValidateChecksum(nid) {
-		return models.NIDData{
-			NationalID: nid,
-			Valid:      false,
-			Error:      "الرقم القومي غير صحيح (تأكد من مراجعة الأرقام الـ 14 بدقة)",
-		}
-	}
+	// 4. Modulo-11 Checksum Verification
+	checksumValid, expectedCheckDigit := CalculateChecksum(nid)
 
 	// 5. Gender Calculation (13th digit)
 	sequenceDigit := int(nid[12] - '0')
@@ -191,12 +196,62 @@ func ParseNationalID(input string) models.NIDData {
 		age--
 	}
 
-	return models.NIDData{
-		NationalID:  nid,
-		Valid:       true,
-		BirthDate:   birthDateStr,
-		Gender:      gender,
-		Governorate: govName,
-		Age:         age,
+	result := models.NIDData{
+		NationalID:       nid,
+		Valid:            checksumValid,
+		BirthDate:        birthDateStr,
+		Gender:           gender,
+		Governorate:      govName,
+		Age:              age,
+		ChecksumValid:    checksumValid,
+		ExpectedChecksum: expectedCheckDigit,
 	}
+
+	if !checksumValid {
+		result.Error = fmt.Sprintf("الرقم القومي غير مطابق لخوارزمية التحقق (الرقم التأكيدي الأخير غير صحيح، المتوقع %d)", expectedCheckDigit)
+	}
+
+	// 7. Educational Stage & Century Check
+	// If student is in a school/university stage and century is 2 with year < 50 (e.g. 1916 instead of 2016)
+	if centuryDigit == '2' && yearOffset <= 30 {
+		candidateID := "3" + nid[1:]
+		candidateValid, _ := CalculateChecksum(candidateID)
+		result.SuggestedID = candidateID
+		result.AgeMismatch = true
+		if candidateValid {
+			result.StageWarning = fmt.Sprintf("سنة الميلاد المستخرجة 19%02d (العمر %d سنة)! هل يبدأ الرقم بـ 3 لمواليد 20%02d؟", yearOffset, age, yearOffset)
+		} else {
+			result.StageWarning = fmt.Sprintf("سنة الميلاد المستخرجة 19%02d (العمر %d سنة)! تحقق من بداية الرقم القومي لمواليد الألفية.", yearOffset, age)
+		}
+	} else if stage != "" {
+		switch stage {
+		case "حضانات", "حضانات (KG)":
+			if age < 2 || age > 9 {
+				result.AgeMismatch = true
+				result.StageWarning = fmt.Sprintf("العمر (%d سنة) غير معتاد لمرحلة الحضانات (المتوقع 3-6 سنوات)", age)
+			}
+		case "ابتدائي":
+			if age < 5 || age > 15 {
+				result.AgeMismatch = true
+				result.StageWarning = fmt.Sprintf("العمر (%d سنة) غير معتاد للمرحلة الابتدائية (المتوقع 6-12 سنة)", age)
+			}
+		case "إعدادي":
+			if age < 10 || age > 18 {
+				result.AgeMismatch = true
+				result.StageWarning = fmt.Sprintf("العمر (%d سنة) غير معتاد للمرحلة الإعدادية (المتوقع 12-15 سنة)", age)
+			}
+		case "ثانوي":
+			if age < 13 || age > 22 {
+				result.AgeMismatch = true
+				result.StageWarning = fmt.Sprintf("العمر (%d سنة) غير معتاد للمرحلة الثانوية (المتوقع 15-18 سنة)", age)
+			}
+		case "جامعة":
+			if age < 16 || age > 35 {
+				result.AgeMismatch = true
+				result.StageWarning = fmt.Sprintf("العمر (%d سنة) غير معتاد لمرحلة الجامعة (المتوقع 18-25 سنة)", age)
+			}
+		}
+	}
+
+	return result
 }

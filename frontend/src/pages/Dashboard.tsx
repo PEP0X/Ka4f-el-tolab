@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -19,14 +20,29 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Tabs,
+  Tab,
+  Alert,
+  Tooltip,
+  Drawer,
+  useTheme,
+  useMediaQuery,
+  Checkbox,
+  Badge,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
 import {
   useReactTable,
   getCoreRowModel,
   getSortedRowModel,
+  getPaginationRowModel,
   flexRender,
   createColumnHelper,
   SortingState,
+  PaginationState,
+  RowSelectionState,
+  VisibilityState,
 } from '@tanstack/react-table';
 import { useForm } from '@tanstack/react-form';
 import {
@@ -49,15 +65,41 @@ import {
   RefreshCw,
   X,
   Check,
+  ClipboardList,
+  Download,
+  Menu as MenuIcon,
+  Sparkles,
+  SlidersHorizontal,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  ChevronsRight,
+  ChevronRight,
+  ChevronLeft,
+  ChevronsLeft,
+  Copy,
+  Phone,
+  Columns,
+  Layers,
+  Eye,
+  EyeOff,
+  Filter,
+  ShieldCheck,
+  Fingerprint,
 } from 'lucide-react';
 import { useStudentStore } from '../store/useStudentStore';
-import { Student, StageType } from '../types/student';
+import { useCorrectionStore } from '../store/useCorrectionStore';
+import { Student, StageType, ImportPreview, ImportRow, ImportSession } from '../types/student';
+import '../types/wails';
 import { Toast } from '../components/common/Toast';
+import { NIDCheckerModal } from '../components/NIDCheckerModal';
 
 const stages: StageType[] = ['حضانات (KG)', 'ابتدائي', 'إعدادي', 'ثانوي', 'جامعة'];
 
+const secondaryTracks = ['عام', 'تجاري', 'فني صناعي', 'زراعي', 'سياحة وفنادق', 'خدمات', 'انتظار التنسيق'];
+
 const schoolGrades: Record<string, string[]> = {
-  'حضانات (KG)': ['KG1', 'KG2'],
+  'حضانات (KG)': ['الحضانة الأولى (Pre-KG)', 'KG1', 'KG2'],
   'ابتدائي': [
     'الصف الأول الابتدائي',
     'الصف الثاني الابتدائي',
@@ -72,6 +114,7 @@ const schoolGrades: Record<string, string[]> = {
     'الصف الثالث الإعدادي',
   ],
   'ثانوي': [
+    'انتظار التنسيق',
     'الصف الأول الثانوي',
     'الصف الثاني الثانوي',
     'الصف الثالث الثانوي',
@@ -83,7 +126,7 @@ const schoolGrades: Record<string, string[]> = {
     'الفرقة الرابعة',
     'الفرقة الخامسة',
     'الفرقة السادسة',
-    'خريج',
+    'متخرج',
   ],
 };
 
@@ -92,6 +135,7 @@ const studyYearOptions = ['سنتان', '3 سنوات', '4 سنوات (معظم 
 const columnHelper = createColumnHelper<Student>();
 
 export const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
   const {
     students,
     stageCounts,
@@ -99,14 +143,29 @@ export const Dashboard: React.FC = () => {
     searchQuery,
     isLoading,
     fetchStudents,
+    fetchStageCounts,
     setActiveStage,
     setSearchQuery,
     addStudent,
     deleteStudent,
+    deleteAllData,
     parseNID,
   } = useStudentStore();
 
+  const { summary, refreshSummary, loadSession } = useCorrectionStore();
+
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 25 });
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [density, setDensity] = useState<'comfortable' | 'compact'>('comfortable');
+  const [genderFilter, setGenderFilter] = useState<'all' | 'ذكر' | 'أنثى'>('all');
+  const [gradeFilter, setGradeFilter] = useState<string>('all');
+  const [columnMenuAnchor, setColumnMenuAnchor] = useState<null | HTMLElement>(null);
+
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatusText, setSaveStatusText] = useState('حفظ وإضافة الطالب');
@@ -115,6 +174,24 @@ export const Dashboard: React.FC = () => {
   const [toastSeverity, setToastSeverity] = useState<'success' | 'error' | 'info'>('success');
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+  const [nidCheckerOpen, setNidCheckerOpen] = useState(false);
+  // Wipe Database flow
+  const [wipeDialogOpen, setWipeDialogOpen] = useState(false);
+  const [wipeConfirmText, setWipeConfirmText] = useState('');
+  const [isWiping, setIsWiping] = useState(false);
+  // Import review flow
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [importRows, setImportRows] = useState<ImportRow[]>([]);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importStage, setImportStage] = useState('ابتدائي');
+  const [importing, setImporting] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  // After the preview is closed, we may show the "review now / later" prompt.
+  const [pendingPrompt, setPendingPrompt] = useState<{
+    open: boolean;
+    session: ImportSession | null;
+    pendingCount: number;
+  }>({ open: false, session: null, pendingCount: 0 });
 
   const fullNameRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -132,11 +209,15 @@ export const Dashboard: React.FC = () => {
     governorate?: string;
     valid?: boolean;
     error?: string;
+    stageWarning?: string;
+    suggestedId?: string;
+    nationalId?: string;
   }>({});
 
   useEffect(() => {
     fetchStudents();
-  }, []);
+    refreshSummary();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Global Keyboard Shortcuts (⌘K / Ctrl+K for search)
   useEffect(() => {
@@ -158,6 +239,7 @@ export const Dashboard: React.FC = () => {
       nationalId: '',
       stage: activeStage,
       grade: schoolGrades[activeStage]?.[0] || '',
+      track: activeStage === 'ثانوي' ? 'عام' : '',
       universityName: '',
       faculty: '',
       studyYears: '4 سنوات (معظم الكليات)',
@@ -226,10 +308,27 @@ export const Dashboard: React.FC = () => {
   });
 
   // Execute Go National ID Engine Validation when typing ends or reaches 14 digits
-  const handleNIDValidation = async (val: string) => {
+  const handleNIDValidation = async (val: string, stage?: string) => {
     if (!val || val.trim().length === 0) {
       setParsedNIDInfo({});
       return;
+    }
+
+    const currentStage = stage || form.getFieldValue('stage') || activeStage;
+    if (window.go?.main?.App?.ParseNationalIDWithStage) {
+      try {
+        const clean = val.replace(/[٠-٩]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 1632 + 48)).replace(/\D/g, '');
+        const res = await window.go.main.App.ParseNationalIDWithStage(clean, currentStage);
+        setParsedNIDInfo(res);
+        if (res.valid) {
+          form.setFieldValue('birthDate', res.birthDate);
+          form.setFieldValue('gender', res.gender);
+          form.setFieldValue('governorate', res.governorate);
+        }
+        return res;
+      } catch (e) {
+        // Fallback to store parseNID
+      }
     }
 
     const parsed = await parseNID(val);
@@ -261,6 +360,146 @@ export const Dashboard: React.FC = () => {
         form.setFieldValue('photoPath', result);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleStartExcelImport = async () => {
+    const app = window.go?.main?.App;
+    if (!app?.StartExcelImport) {
+      setToastSeverity('error');
+      setToastMessage('ميزة الاستيراد تحتاج تشغيل التطبيق المكتبي');
+      setToastOpen(true);
+      return;
+    }
+    setImporting(true);
+    try {
+      const preview = await app.StartExcelImport();
+      if (!preview?.sheets?.length) return; // picker was cancelled
+      setImportPreview(preview);
+      setImportRows(preview.rows || []);
+      setImportStage(preview.sheets.find((sheet) => sheet.stage)?.stage || 'ابتدائي');
+      setImportDialogOpen(true);
+    } catch (error) {
+      setToastSeverity('error');
+      setToastMessage('تعذر قراءة ملف Excel. تأكد من أنه ملف .xlsx صالح.');
+      setToastOpen(true);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const updateImportStudent = (rowId: string, field: keyof Student, value: string) => {
+    setImportRows((rows) => rows.map((row) => row.id === rowId ? { ...row, student: { ...row.student, [field]: value } } : row));
+  };
+
+  /**
+   * The new flow: clean rows (status=ready, status=update) are imported immediately
+   * via the Go side. The remaining rows become a pending batch that the user can
+   * review in the Correction Workspace at any time (or right now via the prompt).
+   */
+  const handleConfirmExcelImport = async () => {
+    const app = window.go?.main?.App;
+    if (!app?.CommitExcelPreview || !importPreview) {
+      setToastSeverity('error');
+      setToastMessage('محرك التطبيق غير جاهز، أعد تشغيل البرنامج.');
+      setToastOpen(true);
+      return;
+    }
+    setCommitting(true);
+    try {
+      const result = await app.CommitExcelPreview({
+        ...importPreview,
+        rows: importRows,
+      });
+      const session = result?.session || (Array.isArray(result) ? (result as any)[0] : (result as any));
+      const batchResult = result?.batchResult || (Array.isArray(result) ? (result as any)[1] : { inserted: session?.importedCount || 0, updated: 0 });
+
+      setImportDialogOpen(false);
+      setImportPreview(null);
+      setImportRows([]);
+      await fetchStudents();
+      await fetchStageCounts();
+      await refreshSummary();
+
+      const pendingCount = session?.pendingCount ?? 0;
+      if (pendingCount > 0) {
+        setPendingPrompt({ open: true, session, pendingCount });
+      } else {
+        setToastSeverity('success');
+        const inserted = batchResult?.inserted ?? session?.importedCount ?? 0;
+        const updated = batchResult?.updated ?? 0;
+        setToastMessage(
+          `تم الاستيراد بنجاح: ${inserted} طالب جديد` + (updated > 0 ? `، وتحديث ${updated} طالب.` : '.')
+        );
+        setToastOpen(true);
+      }
+    } catch (error: any) {
+      setToastSeverity('error');
+      const msg = error?.message || '';
+      setToastMessage(msg || 'تعذر تأكيد الاستيراد؛ لم يتم حفظ أي صف.');
+      setToastOpen(true);
+    } finally {
+      setCommitting(false);
+    }
+  };
+
+  const handleCancelImport = () => {
+    // Closing the dialog discards the preview — Go side never wrote anything
+    // because the user has not yet pressed "متابعة". Nothing to undo.
+    setImportDialogOpen(false);
+    setImportPreview(null);
+    setImportRows([]);
+  };
+
+  const handleExportSkippedFromPreview = async () => {
+    const app = window.go?.main?.App;
+    if (!app?.ExportImportRejections || !importPreview) {
+      setToastSeverity('error');
+      setToastMessage('محرك التطبيق غير جاهز، أعد تشغيل البرنامج.');
+      setToastOpen(true);
+      return;
+    }
+    const skipped = importRows.filter((row) => row.status !== 'ready' && row.status !== 'update');
+    if (!skipped.length) {
+      setToastSeverity('info');
+      setToastMessage('لا توجد صفوف متخطاة لتصديرها.');
+      setToastOpen(true);
+      return;
+    }
+    try {
+      await app.ExportImportRejections(skipped);
+      setToastSeverity('success');
+      setToastMessage('تم حفظ تقرير الصفوف المتخطاة.');
+      setToastOpen(true);
+    } catch (error) {
+      setToastSeverity('error');
+      setToastMessage('تعذر حفظ تقرير الصفوف المتخطاة.');
+      setToastOpen(true);
+    }
+  };
+
+  const openCorrectionWorkspace = async (sessionId: string) => {
+    await loadSession(sessionId);
+    navigate(`/correction/${sessionId}`);
+  };
+
+  const handleExportRemainingFromBadge = async (sessionId: string) => {
+    const app = window.go?.main?.App;
+    if (!app?.ExportPendingImportRows) {
+      setToastSeverity('error');
+      setToastMessage('محرك التطبيق غير جاهز، أعد تشغيل البرنامج.');
+      setToastOpen(true);
+      return;
+    }
+    try {
+      await app.ExportPendingImportRows(sessionId);
+      setToastSeverity('success');
+      setToastMessage('تم تصدير الصفوف المتبقية.');
+      setToastOpen(true);
+    } catch (err: any) {
+      setToastSeverity('error');
+      setToastMessage(err?.message || 'تعذر التصدير.');
+      setToastOpen(true);
     }
   };
 
@@ -301,6 +540,26 @@ export const Dashboard: React.FC = () => {
     handleMenuClose();
   };
 
+  const handleConfirmWipeDatabase = async () => {
+    if (wipeConfirmText.trim().toLowerCase() !== 'delete') return;
+    setIsWiping(true);
+    try {
+      await deleteAllData();
+      await refreshSummary();
+      setWipeDialogOpen(false);
+      setWipeConfirmText('');
+      setToastSeverity('success');
+      setToastMessage('تم حذف كافة بيانات قاعدة البيانات بنجاح');
+      setToastOpen(true);
+    } catch (err: any) {
+      setToastSeverity('error');
+      setToastMessage(err?.message || 'حدث خطأ أثناء حذف قاعدة البيانات');
+      setToastOpen(true);
+    } finally {
+      setIsWiping(false);
+    }
+  };
+
   const stats = useMemo(() => {
     const totalCountFromStages = Object.values(stageCounts).reduce((sum, count) => sum + count, 0);
     const total = totalCountFromStages > 0 ? totalCountFromStages : students.length;
@@ -313,25 +572,78 @@ export const Dashboard: React.FC = () => {
     return { total, stageTotal, males, females, auditCount };
   }, [students, stageCounts, activeStage]);
 
+  const availableGradesInStage = useMemo(() => {
+    const list = schoolGrades[activeStage] || [];
+    if (activeStage === 'ثانوي') {
+      return [...list, ...secondaryTracks];
+    }
+    return list;
+  }, [activeStage]);
+
+  const filteredStudents = useMemo(() => {
+    return students.filter((s) => {
+      if (genderFilter !== 'all' && s.gender !== genderFilter) return false;
+      if (gradeFilter !== 'all') {
+        if (s.grade !== gradeFilter && s.track !== gradeFilter) return false;
+      }
+      return true;
+    });
+  }, [students, genderFilter, gradeFilter]);
+
+  const columnLabels: Record<string, string> = {
+    fullName: 'اسم الطالب الرباعي',
+    nationalId: 'الرقم القومي',
+    grade: 'المرحلة والصف',
+    phone: 'رقم الهاتف',
+    cathedralStudentId: 'رقم الطالب بالرعاية',
+    cathedralFamilyId: 'رقم الأسرة بالرعاية',
+    alexandriaStudentId: 'رقم الطالب بالعضوية',
+    alexandriaFamilyId: 'رقم الأسرة بالعضوية',
+  };
+
   const columns = useMemo(
     () => [
+      columnHelper.display({
+        id: 'select',
+        header: ({ table }) => (
+          <Checkbox
+            size="small"
+            checked={table.getIsAllPageRowsSelected()}
+            indeterminate={table.getIsSomePageRowsSelected()}
+            onChange={table.getToggleAllPageRowsSelectedHandler()}
+            sx={{ p: 0.5, color: '#94a3b8', '&.Mui-checked': { color: '#2563eb' } }}
+          />
+        ),
+        cell: ({ row }) => (
+          <Checkbox
+            size="small"
+            checked={row.getIsSelected()}
+            disabled={!row.getCanSelect()}
+            onChange={row.getToggleSelectedHandler()}
+            sx={{ p: 0.5, color: '#cbd5e1', '&.Mui-checked': { color: '#2563eb' } }}
+          />
+        ),
+      }),
       columnHelper.accessor('fullName', {
+        id: 'fullName',
         header: 'اسم الطالب الرباعي',
+        enableSorting: true,
         cell: (info) => (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
             <Box
               sx={{
-                width: 32,
-                height: 32,
+                width: density === 'compact' ? 28 : 34,
+                height: density === 'compact' ? 28 : 34,
                 borderRadius: '50%',
-                bgcolor: '#f1f5f9',
-                color: '#1e293b',
+                bgcolor: '#eff6ff',
+                color: '#2563eb',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontWeight: 700,
-                fontSize: '0.8rem',
-                border: '1px solid #cbd5e1',
+                fontWeight: 800,
+                fontSize: '0.82rem',
+                border: '1px solid #bfdbfe',
+                flexShrink: 0,
               }}
             >
               {info.row.original.photoPath ? (
@@ -345,30 +657,65 @@ export const Dashboard: React.FC = () => {
               )}
             </Box>
             <Box sx={{ textAlign: 'start' }}>
-              <Typography variant="body2" fontWeight={700} color="#0f172a">
-                {info.getValue()}
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                <Typography variant="body2" fontWeight={800} color="#0f172a">
+                  {info.getValue()}
+                </Typography>
+                {info.row.original.deaconStatus && (
+                  <Chip
+                    label="شماس"
+                    size="small"
+                    sx={{ height: 18, fontSize: '0.65rem', bgcolor: '#fef3c7', color: '#b45309', fontWeight: 800 }}
+                  />
+                )}
+              </Box>
               <Typography variant="caption" color="text.secondary">
-                {info.row.original.governorate || 'غير محدد'}
+                {info.row.original.governorate || 'غير محدد'} {info.row.original.gender ? `• ${info.row.original.gender}` : ''}
               </Typography>
             </Box>
           </Box>
         ),
       }),
       columnHelper.accessor('nationalId', {
+        id: 'nationalId',
         header: 'الرقم القومي',
-        cell: (info) => (
-          <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 600, color: '#334155', textAlign: 'start' }}>
-            {info.getValue() || '—'}
-          </Typography>
-        ),
+        enableSorting: true,
+        cell: (info) => {
+          const val = info.getValue();
+          return (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, textAlign: 'start' }}>
+              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 700, color: '#334155', letterSpacing: 0.5 }}>
+                {val || '—'}
+              </Typography>
+              {val && (
+                <Tooltip title="نسخ الرقم القومي">
+                  <IconButton
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigator.clipboard.writeText(val);
+                      setToastMessage('تم نسخ الرقم القومي إلى الحافظة');
+                      setToastSeverity('success');
+                      setToastOpen(true);
+                    }}
+                    sx={{ p: 0.3, color: '#94a3b8', '&:hover': { color: '#2563eb' } }}
+                  >
+                    <Copy size={13} />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Box>
+          );
+        },
       }),
-      columnHelper.accessor('stage', {
+      columnHelper.accessor('grade', {
+        id: 'grade',
         header: 'المرحلة والصف',
+        enableSorting: true,
         cell: (info) => (
           <Box sx={{ textAlign: 'start' }}>
             <Chip
-              label={info.getValue()}
+              label={info.row.original.stage}
               size="small"
               sx={{
                 fontWeight: 700,
@@ -376,42 +723,83 @@ export const Dashboard: React.FC = () => {
                 color: '#1d4ed8',
                 border: '1px solid #bfdbfe',
                 height: 22,
-                fontSize: '0.75rem',
+                fontSize: '0.74rem',
               }}
             />
-            <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.3 }}>
+            <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.3, fontWeight: 600 }}>
               {info.row.original.stage === 'جامعة'
                 ? `${info.row.original.universityName || ''} - ${info.row.original.faculty || ''}`
-                : info.row.original.grade}
+                : info.row.original.stage === 'ثانوي' && info.row.original.track
+                ? `${info.row.original.grade || 'المرحلة الثانوية'} (${info.row.original.track})`
+                : info.row.original.grade || '—'}
             </Typography>
           </Box>
         ),
+      }),
+      columnHelper.accessor('phone', {
+        id: 'phone',
+        header: 'رقم الهاتف',
+        enableSorting: true,
+        cell: (info) => {
+          const p = info.getValue() || info.row.original.parentPhone;
+          return (
+            <Typography variant="body2" sx={{ fontFamily: 'monospace', color: '#475569', textAlign: 'start' }}>
+              {p || '—'}
+            </Typography>
+          );
+        },
       }),
       columnHelper.accessor('cathedralStudentId', {
-        header: 'الأكواد الكاتدرائية',
-        cell: (info) => (
-          <Box sx={{ textAlign: 'start' }}>
-            <Typography variant="caption" display="block" fontWeight={700} color="#0f172a">
-              طالب: {info.getValue() || '—'}
+        id: 'cathedralStudentId',
+        header: 'رقم الطالب بالرعاية',
+        enableSorting: true,
+        cell: (info) => {
+          const val = info.getValue() || (info.row.original as any).CathedralStudentID;
+          return (
+            <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 700, color: '#0f172a', textAlign: 'start' }}>
+              {val || '—'}
             </Typography>
-            <Typography variant="caption" display="block" color="text.secondary">
-              أسرة: {info.row.original.cathedralFamilyId || '—'}
+          );
+        },
+      }),
+      columnHelper.accessor('cathedralFamilyId', {
+        id: 'cathedralFamilyId',
+        header: 'رقم الأسرة بالرعاية',
+        enableSorting: true,
+        cell: (info) => {
+          const val = info.getValue() || (info.row.original as any).CathedralFamilyID;
+          return (
+            <Typography variant="body2" sx={{ fontFamily: 'monospace', color: '#475569', textAlign: 'start' }}>
+              {val || '—'}
             </Typography>
-          </Box>
-        ),
+          );
+        },
       }),
       columnHelper.accessor('alexandriaStudentId', {
-        header: 'الأكواد الإسكندرية',
-        cell: (info) => (
-          <Box sx={{ textAlign: 'start' }}>
-            <Typography variant="caption" display="block" color="#334155">
-              طالب: {info.getValue() || '—'}
+        id: 'alexandriaStudentId',
+        header: 'رقم الطالب بالعضوية',
+        enableSorting: true,
+        cell: (info) => {
+          const val = info.getValue() || (info.row.original as any).AlexandriaStudentID;
+          return (
+            <Typography variant="body2" sx={{ fontFamily: 'monospace', color: '#475569', textAlign: 'start' }}>
+              {val || '—'}
             </Typography>
-            <Typography variant="caption" display="block" color="text.secondary">
-              أسرة: {info.row.original.alexandriaFamilyId || '—'}
+          );
+        },
+      }),
+      columnHelper.accessor('alexandriaFamilyId', {
+        id: 'alexandriaFamilyId',
+        header: 'رقم الأسرة بالعضوية',
+        enableSorting: true,
+        cell: (info) => {
+          const val = info.getValue() || (info.row.original as any).AlexandriaFamilyID;
+          return (
+            <Typography variant="body2" sx={{ fontFamily: 'monospace', color: '#64748b', textAlign: 'start' }}>
+              {val || '—'}
             </Typography>
-          </Box>
-        ),
+          );
+        },
       }),
       columnHelper.display({
         id: 'actions',
@@ -427,16 +815,26 @@ export const Dashboard: React.FC = () => {
         ),
       }),
     ],
-    []
+    [density]
   );
 
   const table = useReactTable({
-    data: students,
+    data: filteredStudents,
     columns,
-    state: { sorting },
+    state: {
+      sorting,
+      pagination,
+      rowSelection,
+      columnVisibility,
+    },
     onSortingChange: setSorting,
+    onPaginationChange: setPagination,
+    onRowSelectionChange: setRowSelection,
+    onColumnVisibilityChange: setColumnVisibility,
+    enableRowSelection: true,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
   });
 
   const FieldLabel: React.FC<{ children: React.ReactNode; required?: boolean }> = ({ children, required }) => (
@@ -455,6 +853,172 @@ export const Dashboard: React.FC = () => {
     </Typography>
   );
 
+  const renderSidebarContent = () => (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between', p: 2 }}>
+      <Box>
+        {/* Church Branding Header */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2.5, px: 0.5, pt: 0.5 }}>
+          <Box
+            sx={{
+              width: 42,
+              height: 42,
+              borderRadius: 2.5,
+              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+              color: '#ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
+            }}
+          >
+            <Church size={22} />
+          </Box>
+          <Box sx={{ textAlign: 'start' }}>
+            <Typography variant="subtitle1" fontWeight={800} color="#0f172a" sx={{ lineHeight: 1.2 }}>
+              كنيسة مارجرجس
+            </Typography>
+            <Typography variant="caption" color="text.secondary" fontWeight={600}>
+              خدمة أسر إخوة الرب
+            </Typography>
+          </Box>
+        </Box>
+
+        <Divider sx={{ mb: 2 }} />
+
+        <Typography
+          variant="caption"
+          fontWeight={800}
+          color="#64748b"
+          sx={{ px: 1, mb: 1, display: 'block', textAlign: 'start', textTransform: 'uppercase', letterSpacing: 0.5 }}
+        >
+          المراحل التعليمية
+        </Typography>
+
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.8 }}>
+          {stages.map((stg) => {
+            const isActive = activeStage === stg;
+            const count = stageCounts[stg] || 0;
+            return (
+              <Button
+                key={stg}
+                onClick={() => {
+                  setActiveStage(stg);
+                  if (isMobile) setMobileDrawerOpen(false);
+                }}
+                sx={{
+                  justifyContent: 'space-between',
+                  px: 1.8,
+                  py: 1.1,
+                  borderRadius: 2,
+                  fontWeight: isActive ? 800 : 600,
+                  fontSize: '0.9rem',
+                  bgcolor: isActive ? '#eff6ff' : 'transparent',
+                  color: isActive ? '#1d4ed8' : '#475569',
+                  border: isActive ? '1px solid #bfdbfe' : '1px solid transparent',
+                  boxShadow: isActive ? '0 2px 8px rgba(37, 99, 235, 0.08)' : 'none',
+                  '&:hover': {
+                    bgcolor: isActive ? '#e0f2fe' : '#f8fafc',
+                    color: '#1d4ed8',
+                  },
+                  transition: 'all 150ms ease',
+                }}
+              >
+                <Typography variant="body2" fontWeight={isActive ? 800 : 600}>
+                  {stg}
+                </Typography>
+                <Chip
+                  label={count}
+                  size="small"
+                  sx={{
+                    height: 22,
+                    fontSize: '0.75rem',
+                    fontWeight: 800,
+                    bgcolor: isActive ? '#2563eb' : '#f1f5f9',
+                    color: isActive ? '#ffffff' : '#64748b',
+                    transition: 'all 150ms ease',
+                  }}
+                />
+              </Button>
+            );
+          })}
+        </Box>
+
+        <Divider sx={{ my: 2.5 }} />
+
+        {/* PENDING IMPORTS — persistent badge across sessions */}
+        {summary && summary.pendingCount > 0 ? (
+          <Box sx={{ mb: 2 }}>
+            <Typography
+              variant="caption"
+              fontWeight={800}
+              color="#d97706"
+              sx={{ px: 1, mb: 1, display: 'block', textAlign: 'start' }}
+            >
+              دفعات معلقة للمراجعة
+            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {summary.sessions.map((s) => (
+                <Paper
+                  key={s.id}
+                  elevation={0}
+                  sx={{
+                    p: 1.5,
+                    borderRadius: 2.5,
+                    border: '1px solid #fde68a',
+                    bgcolor: '#fffbeb',
+                    textAlign: 'start',
+                    boxShadow: '0 2px 8px rgba(217, 119, 6, 0.06)',
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    <Chip
+                      label={s.pendingCount}
+                      size="small"
+                      sx={{ bgcolor: '#d97706', color: '#fff', fontWeight: 800, height: 22, fontSize: '0.74rem' }}
+                    />
+                    <Typography variant="caption" fontWeight={800} color="#92400e" sx={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }} noWrap>
+                      {s.sourceFilename || 'استيراد سابق'}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 0.8 }}>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      color="warning"
+                      startIcon={<ClipboardList size={13} />}
+                      onClick={() => {
+                        if (isMobile) setMobileDrawerOpen(false);
+                        openCorrectionWorkspace(s.id);
+                      }}
+                      sx={{ flex: 1, py: 0.6, fontSize: '0.78rem', fontWeight: 800, borderRadius: 1.5 }}
+                    >
+                      مراجعة وتصحيح
+                    </Button>
+                    <Tooltip title="تصدير المتبقي">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleExportRemainingFromBadge(s.id)}
+                        sx={{ border: '1px solid #fde68a', bgcolor: '#fff' }}
+                      >
+                        <Download size={13} />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                </Paper>
+              ))}
+            </Box>
+          </Box>
+        ) : null}
+      </Box>
+
+      <Box sx={{ pt: 2, borderTop: '1px solid #f1f5f9' }}>
+        <Typography variant="caption" color="text.secondary" display="block" textAlign="center" fontWeight={600}>
+          تطبيق محلي • Offline-First
+        </Typography>
+      </Box>
+    </Box>
+  );
+
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#f8fafc' }}>
       <Toast
@@ -464,214 +1028,343 @@ export const Dashboard: React.FC = () => {
         onClose={() => setToastOpen(false)}
       />
 
-      {/* SIDEBAR PANEL */}
-      <Box
-        sx={{
-          width: 240,
-          bgcolor: '#ffffff',
-          borderLeft: '1px solid #e2e8f0',
-          p: 2,
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-        }}
-      >
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, mb: 3, px: 1, pt: 1 }}>
-            <Box
-              sx={{
-                width: 34,
-                height: 34,
-                borderRadius: 1.5,
-                bgcolor: '#eff6ff',
-                color: '#2563eb',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: '1px solid #dbeafe',
-              }}
-            >
-              <Church size={20} />
-            </Box>
-            <Box sx={{ textAlign: 'start' }}>
-              <Typography variant="subtitle2" fontWeight={800} color="#0f172a">
-                كنيسة مارجرجس
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                خدمة أسر إخوة الرب
-              </Typography>
-            </Box>
-          </Box>
-
-          <Divider sx={{ mb: 2 }} />
-
-          <Typography
-            variant="caption"
-            fontWeight={700}
-            color="text.secondary"
-            sx={{ px: 1, mb: 1, display: 'block', textAlign: 'start' }}
-          >
-            المراحل التعليمية
-          </Typography>
-
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-            {stages.map((stg) => {
-              const isActive = activeStage === stg;
-              const count = stageCounts[stg] || 0;
-              return (
-                <Button
-                  key={stg}
-                  onClick={() => setActiveStage(stg)}
-                  sx={{
-                    justifyContent: 'space-between',
-                    px: 1.5,
-                    py: 0.9,
-                    borderRadius: 1.5,
-                    fontWeight: isActive ? 700 : 600,
-                    fontSize: '0.88rem',
-                    bgcolor: isActive ? '#eff6ff' : 'transparent',
-                    color: isActive ? '#1d4ed8' : '#475569',
-                    borderRight: isActive ? '3px solid #2563eb' : '3px solid transparent',
-                    '&:hover': {
-                      bgcolor: isActive ? '#e0f2fe' : '#f1f5f9',
-                    },
-                  }}
-                >
-                  <Typography variant="body2" fontWeight={isActive ? 700 : 600}>
-                    {stg}
-                  </Typography>
-                  <Chip
-                    label={count}
-                    size="small"
-                    sx={{
-                      height: 20,
-                      fontSize: '0.72rem',
-                      fontWeight: 700,
-                      bgcolor: isActive ? '#dbeafe' : '#f1f5f9',
-                      color: isActive ? '#1d4ed8' : '#64748b',
-                    }}
-                  />
-                </Button>
-              );
-            })}
-          </Box>
-
-          <Divider sx={{ my: 2.5 }} />
-
-          <Button
-            fullWidth
-            variant="outlined"
-            color="error"
-            startIcon={<AlertTriangle size={16} />}
-            sx={{
-              py: 1,
-              px: 1.5,
-              borderRadius: 1.5,
-              borderColor: '#fca5a5',
-              bgcolor: '#fef2f2',
-              color: '#dc2626',
-              justifyContent: 'space-between',
-              '&:hover': { bgcolor: '#fee2e2', borderColor: '#f87171' },
-            }}
-          >
-            <Typography variant="caption" fontWeight={700}>
-              مركز تدقيق البيانات
-            </Typography>
-            <Chip
-              label={stats.auditCount}
-              size="small"
-              sx={{ bgcolor: '#dc2626', color: 'white', fontWeight: 800, height: 18, fontSize: '0.7rem' }}
-            />
-          </Button>
+      {/* DESKTOP PERMANENT SIDEBAR */}
+      {!isMobile && (
+        <Box
+          component="nav"
+          sx={{
+            width: 260,
+            flexShrink: 0,
+            bgcolor: '#ffffff',
+            borderLeft: '1px solid #e2e8f0',
+            height: '100vh',
+            position: 'sticky',
+            top: 0,
+          }}
+        >
+          {renderSidebarContent()}
         </Box>
+      )}
 
-        <Box sx={{ pt: 2, borderTop: '1px solid #f1f5f9' }}>
-          <Typography variant="caption" color="text.secondary" display="block" textAlign="center">
-            تطبيق محلي • Offline-First
-          </Typography>
-        </Box>
-      </Box>
+      {/* MOBILE DRAWER SIDEBAR */}
+      {isMobile && (
+        <Drawer
+          anchor="right"
+          open={mobileDrawerOpen}
+          onClose={() => setMobileDrawerOpen(false)}
+          PaperProps={{ sx: { width: 280, bgcolor: '#ffffff' } }}
+        >
+          {renderSidebarContent()}
+        </Drawer>
+      )}
 
       {/* MAIN CONTENT AREA */}
-      <Box sx={{ flexGrow: 1, p: 3, overflowY: 'auto' }}>
+      <Box sx={{ flexGrow: 1, p: { xs: 2, sm: 3 }, overflowY: 'auto', minWidth: 0 }}>
         {/* PAGE HEADER */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Box sx={{ textAlign: 'start' }}>
-            <Typography variant="h4" fontWeight={800} color="#0f172a">
-              كشف طلبة المدارس لأسر إخوة الرب
-            </Typography>
-            <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 0.5 }}>
-              كنيسة مارجرجس • مرحلة {activeStage}
-            </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2, mb: 3.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, textAlign: 'start' }}>
+            {isMobile && (
+              <IconButton
+                onClick={() => setMobileDrawerOpen(true)}
+                sx={{ border: '1px solid #e2e8f0', bgcolor: '#fff', p: 1 }}
+              >
+                <MenuIcon size={20} />
+              </IconButton>
+            )}
+            <Box>
+              <Typography variant="h5" fontWeight={800} color="#0f172a" sx={{ fontSize: { xs: '1.3rem', sm: '1.6rem' } }}>
+                كشف طلبة المدارس لأسر إخوة الرب
+              </Typography>
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 0.3 }}>
+                كنيسة مارجرجس • مرحلة <strong style={{ color: '#2563eb' }}>{activeStage}</strong>
+              </Typography>
+            </Box>
           </Box>
 
-          <Box sx={{ display: 'flex', gap: 1.2, alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', gap: 1.2, alignItems: 'center', flexWrap: 'wrap' }}>
             <Button
               variant="contained"
               color="primary"
               startIcon={<UserPlus size={18} />}
               onClick={handleOpenAddDialog}
-              sx={{ px: 2.5, py: 1, fontSize: '0.92rem', borderRadius: 1.5 }}
+              sx={{
+                px: 2.8,
+                py: 1.1,
+                fontSize: '0.92rem',
+                fontWeight: 800,
+                borderRadius: 2,
+                background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                boxShadow: '0 4px 14px rgba(37, 99, 235, 0.3)',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)',
+                  boxShadow: '0 6px 20px rgba(37, 99, 235, 0.4)',
+                  transform: 'translateY(-1px)',
+                },
+                transition: 'all 200ms ease',
+              }}
             >
               + إضافة طالب
             </Button>
-            <Button variant="outlined" startIcon={<FileSpreadsheet size={16} />} sx={{ py: 1, px: 1.8, fontSize: '0.85rem' }}>
+            <Button
+              variant="outlined"
+              startIcon={<ShieldCheck size={17} color="#2563eb" />}
+              onClick={() => setNidCheckerOpen(true)}
+              sx={{
+                py: 1,
+                px: 2,
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                borderRadius: 2,
+                borderColor: '#bfdbfe',
+                color: '#1d4ed8',
+                bgcolor: '#ffffff',
+                '&:hover': { bgcolor: '#eff6ff', borderColor: '#2563eb', transform: 'translateY(-1px)' },
+                transition: 'all 200ms ease',
+              }}
+            >
+              فاحص الأرقام القومية (NID Checker)
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={importing ? <CircularProgress size={16} color="inherit" /> : <FileSpreadsheet size={17} color="#059669" />}
+              onClick={handleStartExcelImport}
+              disabled={importing}
+              sx={{
+                py: 1,
+                px: 2,
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                borderRadius: 2,
+                borderColor: '#a7f3d0',
+                color: '#065f46',
+                bgcolor: '#ffffff',
+                '&:hover': { bgcolor: '#ecfdf5', borderColor: '#10b981', transform: 'translateY(-1px)' },
+                transition: 'all 200ms ease',
+              }}
+            >
               استيراد Excel
             </Button>
-            <Button variant="outlined" startIcon={<RefreshCw size={16} />} sx={{ py: 1, px: 1.8, fontSize: '0.85rem' }}>
+            <Button
+              variant="outlined"
+              startIcon={<RefreshCw size={16} color="#475569" />}
+              sx={{
+                py: 1,
+                px: 2,
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                borderRadius: 2,
+                borderColor: '#cbd5e1',
+                color: '#334155',
+                bgcolor: '#ffffff',
+                '&:hover': { bgcolor: '#f8fafc', borderColor: '#94a3b8', transform: 'translateY(-1px)' },
+                transition: 'all 200ms ease',
+              }}
+            >
               توزيع وترقية الدفعات
             </Button>
-            <Button variant="outlined" startIcon={<Upload size={16} />} sx={{ py: 1, px: 1.8, fontSize: '0.85rem' }}>
+            <Button
+              variant="outlined"
+              startIcon={<Upload size={16} color="#475569" />}
+              sx={{
+                py: 1,
+                px: 2,
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                borderRadius: 2,
+                borderColor: '#cbd5e1',
+                color: '#334155',
+                bgcolor: '#ffffff',
+                '&:hover': { bgcolor: '#f8fafc', borderColor: '#94a3b8', transform: 'translateY(-1px)' },
+                transition: 'all 200ms ease',
+              }}
+            >
               تصدير Excel
+            </Button>
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={<Trash2 size={16} color="#dc2626" />}
+              onClick={() => {
+                setWipeConfirmText('');
+                setWipeDialogOpen(true);
+              }}
+              sx={{
+                py: 1,
+                px: 2,
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                borderRadius: 2,
+                borderColor: '#fca5a5',
+                color: '#dc2626',
+                bgcolor: '#ffffff',
+                '&:hover': { bgcolor: '#fef2f2', borderColor: '#ef4444', transform: 'translateY(-1px)' },
+                transition: 'all 200ms ease',
+              }}
+            >
+              حذف قاعدة البيانات
             </Button>
           </Box>
         </Box>
 
         {/* SUMMARY KPI CARDS */}
-        <Grid container spacing={2} sx={{ mb: 3 }}>
-          <Grid item xs={12} md={4}>
-            <Paper elevation={0} sx={{ p: 2, bgcolor: '#ffffff', borderRadius: 2, border: '1px solid #e2e8f0', textAlign: 'start' }}>
-              <Typography variant="caption" fontWeight={700} color="text.secondary" display="block">
-                إجمالي الطلاب المسجلين
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mt: 0.5 }}>
+        <Grid container spacing={2.5} sx={{ mb: 3.5 }}>
+          <Grid item xs={12} sm={6} md={4}>
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2.5,
+                bgcolor: '#ffffff',
+                borderRadius: 3,
+                border: '1px solid #e2e8f0',
+                textAlign: 'start',
+                position: 'relative',
+                overflow: 'hidden',
+                boxShadow: '0 4px 14px rgba(0,0,0,0.03)',
+                '&:hover': { borderColor: '#cbd5e1', transform: 'translateY(-2px)' },
+                transition: 'all 200ms ease',
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 4,
+                  bgcolor: '#2563eb',
+                },
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="caption" fontWeight={700} color="text.secondary">
+                  إجمالي الطلاب المسجلين
+                </Typography>
+                <Box
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 2,
+                    bgcolor: '#eff6ff',
+                    color: '#2563eb',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Users size={20} />
+                </Box>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
                 <Typography variant="h4" fontWeight={800} color="#0f172a">
                   {stats.total}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  طالب في جميع المراحل
+                  طالب في جميع المراحل الكنسية
                 </Typography>
               </Box>
             </Paper>
           </Grid>
 
-          <Grid item xs={12} md={4}>
-            <Paper elevation={0} sx={{ p: 2, bgcolor: '#ffffff', borderRadius: 2, border: '1px solid #e2e8f0', textAlign: 'start' }}>
-              <Typography variant="caption" fontWeight={700} color="text.secondary" display="block">
-                طلاب مرحلة {activeStage}
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mt: 0.5 }}>
-                <Typography variant="h4" fontWeight={800} color="#2563eb">
+          <Grid item xs={12} sm={6} md={4}>
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2.5,
+                bgcolor: '#ffffff',
+                borderRadius: 3,
+                border: '1px solid #e2e8f0',
+                textAlign: 'start',
+                position: 'relative',
+                overflow: 'hidden',
+                boxShadow: '0 4px 14px rgba(0,0,0,0.03)',
+                '&:hover': { borderColor: '#cbd5e1', transform: 'translateY(-2px)' },
+                transition: 'all 200ms ease',
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 4,
+                  bgcolor: '#7c3aed',
+                },
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="caption" fontWeight={700} color="text.secondary">
+                  طلاب مرحلة {activeStage}
+                </Typography>
+                <Box
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 2,
+                    bgcolor: '#f5f3ff',
+                    color: '#7c3aed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <GraduationCap size={20} />
+                </Box>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+                <Typography variant="h4" fontWeight={800} color="#7c3aed">
                   {stats.stageTotal}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  المرحلة المعروضة بالسجل
+                  طالب بالمرحلة المعروضة بالسجل
                 </Typography>
               </Box>
             </Paper>
           </Grid>
 
-          <Grid item xs={12} md={4}>
-            <Paper elevation={0} sx={{ p: 2, bgcolor: '#ffffff', borderRadius: 2, border: '1px solid #e2e8f0', textAlign: 'start' }}>
-              <Typography variant="caption" fontWeight={700} color="text.secondary" display="block">
-                التوزيع (ذكور / إناث)
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mt: 0.5 }}>
-                <Typography variant="h5" fontWeight={800} color="#0f172a">
-                  {stats.males} / {stats.females}
+          <Grid item xs={12} sm={12} md={4}>
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2.5,
+                bgcolor: '#ffffff',
+                borderRadius: 3,
+                border: '1px solid #e2e8f0',
+                textAlign: 'start',
+                position: 'relative',
+                overflow: 'hidden',
+                boxShadow: '0 4px 14px rgba(0,0,0,0.03)',
+                '&:hover': { borderColor: '#cbd5e1', transform: 'translateY(-2px)' },
+                transition: 'all 200ms ease',
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 4,
+                  bgcolor: '#059669',
+                },
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="caption" fontWeight={700} color="text.secondary">
+                  التوزيع حسب النوع
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  ذكور / إناث
+                <Box
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 2,
+                    bgcolor: '#ecfdf5',
+                    color: '#059669',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <UserCheck size={20} />
+                </Box>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+                <Typography variant="h4" fontWeight={800} color="#0f172a">
+                  {stats.males} <span style={{ fontSize: '1rem', color: '#64748b', fontWeight: 600 }}>ذكور</span> / {stats.females} <span style={{ fontSize: '1rem', color: '#64748b', fontWeight: 600 }}>إناث</span>
                 </Typography>
               </Box>
             </Paper>
@@ -679,95 +1372,674 @@ export const Dashboard: React.FC = () => {
         </Grid>
 
         {/* ==================== 1. PRIMARY MAIN SECTION: SAVED STUDENTS TABLE ==================== */}
-        <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, bgcolor: '#ffffff', border: '1px solid #e2e8f0', mb: 4 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Box sx={{ textAlign: 'start' }}>
-              <Typography variant="h6" fontWeight={800} color="#0f172a">
-                جدول طلاب مرحلة {activeStage} ({students.length})
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                عرض وسجل الطلاب المسجلين بالخدمة الكنسية
-              </Typography>
+        <Paper elevation={0} sx={{ p: { xs: 2, sm: 3 }, borderRadius: 3, bgcolor: '#ffffff', border: '1px solid #e2e8f0', mb: 4, boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+          {/* BULK ACTION BAR */}
+          {Object.keys(rowSelection).length > 0 && (
+            <Paper
+              elevation={0}
+              sx={{
+                p: 1.5,
+                mb: 2.5,
+                borderRadius: 2.5,
+                bgcolor: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 1.5,
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Chip
+                  label={`${Object.keys(rowSelection).length} طالب محدد`}
+                  size="small"
+                  color="primary"
+                  sx={{ fontWeight: 800 }}
+                />
+                <Typography variant="body2" color="text.secondary">
+                  تم تحديد {Object.keys(rowSelection).length} من أصل {filteredStudents.length} طالب
+                </Typography>
+              </Box>
+
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="inherit"
+                  onClick={() => setRowSelection({})}
+                  sx={{ borderRadius: 1.5, fontSize: '0.82rem', bgcolor: '#fff' }}
+                >
+                  إلغاء التحديد
+                </Button>
+                <Button
+                  size="small"
+                  variant="contained"
+                  color="error"
+                  startIcon={<Trash2 size={14} />}
+                  onClick={async () => {
+                    const selectedIndices = Object.keys(rowSelection).map(Number);
+                    const selectedStudents = selectedIndices.map((idx) => filteredStudents[idx]).filter(Boolean);
+                    if (!window.confirm(`هل أنت متأكد من حذف ${selectedStudents.length} طالب محددين؟`)) return;
+                    for (const s of selectedStudents) {
+                      if (s.id) await deleteStudent(s.id);
+                    }
+                    setRowSelection({});
+                    setToastMessage(`تم حذف ${selectedStudents.length} طالب بنجاح`);
+                    setToastSeverity('success');
+                    setToastOpen(true);
+                  }}
+                  sx={{ borderRadius: 1.5, fontWeight: 800, fontSize: '0.82rem' }}
+                >
+                  حذف المحدد ({Object.keys(rowSelection).length})
+                </Button>
+              </Box>
+            </Paper>
+          )}
+
+          {/* TABLE TOOLBAR (SEARCH + FILTERS + VIEW CONTROLS) */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2, mb: 2.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+              <Box sx={{ textAlign: 'start' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="h6" fontWeight={800} color="#0f172a">
+                    سجل طلاب مرحلة {activeStage}
+                  </Typography>
+                  <Chip
+                    label={`${filteredStudents.length} طالب`}
+                    size="small"
+                    sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 800, height: 24 }}
+                  />
+                </Box>
+              </Box>
+
+              {/* Gender quick filter chips */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, bgcolor: '#f8fafc', p: 0.5, borderRadius: 2, border: '1px solid #e2e8f0' }}>
+                <Chip
+                  label="الكل"
+                  size="small"
+                  clickable
+                  onClick={() => setGenderFilter('all')}
+                  sx={{
+                    fontWeight: genderFilter === 'all' ? 800 : 600,
+                    bgcolor: genderFilter === 'all' ? '#2563eb' : 'transparent',
+                    color: genderFilter === 'all' ? '#fff' : '#64748b',
+                    height: 24,
+                    fontSize: '0.75rem',
+                  }}
+                />
+                <Chip
+                  label={`ذكور (${stats.males})`}
+                  size="small"
+                  clickable
+                  onClick={() => setGenderFilter('ذكر')}
+                  sx={{
+                    fontWeight: genderFilter === 'ذكر' ? 800 : 600,
+                    bgcolor: genderFilter === 'ذكر' ? '#2563eb' : 'transparent',
+                    color: genderFilter === 'ذكر' ? '#fff' : '#64748b',
+                    height: 24,
+                    fontSize: '0.75rem',
+                  }}
+                />
+                <Chip
+                  label={`إناث (${stats.females})`}
+                  size="small"
+                  clickable
+                  onClick={() => setGenderFilter('أنثى')}
+                  sx={{
+                    fontWeight: genderFilter === 'أنثى' ? 800 : 600,
+                    bgcolor: genderFilter === 'أنثى' ? '#2563eb' : 'transparent',
+                    color: genderFilter === 'أنثى' ? '#fff' : '#64748b',
+                    height: 24,
+                    fontSize: '0.75rem',
+                  }}
+                />
+              </Box>
+
+              {/* Grade / Track filter if available */}
+              {availableGradesInStage.length > 0 && (
+                <FormControl size="small" sx={{ minWidth: 140 }}>
+                  <Select
+                    value={gradeFilter}
+                    onChange={(e) => setGradeFilter(e.target.value)}
+                    displayEmpty
+                    sx={{ height: 32, fontSize: '0.78rem', bgcolor: '#fff', borderRadius: 2 }}
+                  >
+                    <MenuItem value="all" sx={{ fontSize: '0.82rem' }}>
+                      <em>كافة الصفوف والمسارات</em>
+                    </MenuItem>
+                    {availableGradesInStage.map((g) => (
+                      <MenuItem key={g} value={g} sx={{ fontSize: '0.82rem' }}>
+                        {g}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
             </Box>
 
-            <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
+            {/* Right: Search & Table View Controls */}
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
               <TextField
                 inputRef={searchInputRef}
-                placeholder="بحث عن طالب... الاسم، الرقم القومي، أو الكود (⌘K)"
+                placeholder="بحث عن طالب... (⌘K)"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                sx={{ width: 340 }}
+                sx={{ width: { xs: '100%', sm: 260 }, '& .MuiOutlinedInput-root': { borderRadius: 2, height: 36 } }}
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
-                      <Search size={16} />
+                      <Search size={15} color="#94a3b8" />
                     </InputAdornment>
                   ),
+                  endAdornment: searchQuery ? (
+                    <InputAdornment position="end">
+                      <IconButton size="small" onClick={() => setSearchQuery('')}>
+                        <X size={13} />
+                      </IconButton>
+                    </InputAdornment>
+                  ) : null,
                 }}
               />
+
+              {/* Density Toggle */}
+              <Tooltip title={density === 'comfortable' ? 'العرض المكثف' : 'العرض المريح'}>
+                <IconButton
+                  size="small"
+                  onClick={() => setDensity((d) => (d === 'comfortable' ? 'compact' : 'comfortable'))}
+                  sx={{ border: '1px solid #e2e8f0', bgcolor: '#fff', borderRadius: 2, p: 0.8 }}
+                >
+                  <Layers size={16} color={density === 'compact' ? '#2563eb' : '#64748b'} />
+                </IconButton>
+              </Tooltip>
+
+              {/* Column Visibility Menu Button */}
+              <Tooltip title="تخصيص أعمدة الجدول">
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<Columns size={15} />}
+                  onClick={(e) => setColumnMenuAnchor(e.currentTarget)}
+                  sx={{
+                    borderRadius: 2,
+                    fontSize: '0.8rem',
+                    bgcolor: '#fff',
+                    borderColor: '#cbd5e1',
+                    color: '#475569',
+                    height: 36,
+                  }}
+                >
+                  الأعمدة
+                </Button>
+              </Tooltip>
+
+              {/* Column Visibility Popover Menu */}
+              <Menu
+                anchorEl={columnMenuAnchor}
+                open={Boolean(columnMenuAnchor)}
+                onClose={() => setColumnMenuAnchor(null)}
+                PaperProps={{ sx: { borderRadius: 2.5, minWidth: 200, p: 0.5 } }}
+              >
+                <Typography variant="caption" fontWeight={800} sx={{ px: 2, py: 1, display: 'block', color: 'text.secondary' }}>
+                  إظهار / إخفاء الأعمدة
+                </Typography>
+                <Divider sx={{ my: 0.5 }} />
+                {table.getAllLeafColumns().map((column) => {
+                  if (column.id === 'select' || column.id === 'actions') return null;
+                  return (
+                    <MenuItem
+                      key={column.id}
+                      onClick={column.getToggleVisibilityHandler()}
+                      sx={{ py: 0.4, fontSize: '0.84rem' }}
+                    >
+                      <Checkbox size="small" checked={column.getIsVisible()} sx={{ p: 0.5, mr: 1 }} />
+                      <ListItemText primary={columnLabels[column.id] || column.id} />
+                    </MenuItem>
+                  );
+                })}
+              </Menu>
             </Box>
           </Box>
 
+          {/* TABLE DATA GRID */}
           {isLoading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}>
-              <CircularProgress size={32} />
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 6 }}>
+              <CircularProgress size={36} thickness={4} />
             </Box>
           ) : table.getRowModel().rows.length > 0 ? (
-            <Box sx={{ overflowX: 'auto' }}>
+            <Box sx={{ overflowX: 'auto', borderRadius: 2, border: '1px solid #f1f5f9' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right' }}>
                 <thead>
                   {table.getHeaderGroups().map((headerGroup) => (
-                    <tr key={headerGroup.id}>
-                      {headerGroup.headers.map((header) => (
-                        <th key={header.id} style={{ textAlign: 'right' }}>
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                        </th>
-                      ))}
+                    <tr key={headerGroup.id} style={{ backgroundColor: '#f8fafc' }}>
+                      {headerGroup.headers.map((header) => {
+                        const canSort = header.column.getCanSort();
+                        const isSorted = header.column.getIsSorted();
+                        return (
+                          <th
+                            key={header.id}
+                            onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+                            style={{
+                              textAlign: 'right',
+                              padding: density === 'compact' ? '10px 14px' : '13px 16px',
+                              fontSize: '0.84rem',
+                              fontWeight: 800,
+                              color: isSorted ? '#2563eb' : '#475569',
+                              borderBottom: '2px solid #e2e8f0',
+                              whiteSpace: 'nowrap',
+                              cursor: canSort ? 'pointer' : 'default',
+                              userSelect: 'none',
+                              backgroundColor: isSorted ? '#eff6ff' : 'transparent',
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6 }}>
+                              <span>{flexRender(header.column.columnDef.header, header.getContext())}</span>
+                              {canSort && (
+                                <Box sx={{ display: 'inline-flex', alignItems: 'center' }}>
+                                  {isSorted === 'asc' ? (
+                                    <ArrowUp size={14} color="#2563eb" />
+                                  ) : isSorted === 'desc' ? (
+                                    <ArrowDown size={14} color="#2563eb" />
+                                  ) : (
+                                    <ArrowUpDown size={13} color="#94a3b8" />
+                                  )}
+                                </Box>
+                              )}
+                            </Box>
+                          </th>
+                        );
+                      })}
                     </tr>
                   ))}
                 </thead>
                 <tbody>
-                  {table.getRowModel().rows.map((row) => (
-                    <tr
-                      key={row.id}
-                      style={{ borderBottom: '1px solid #f1f5f9', transition: 'background-color 0.15s' }}
-                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f8fafc')}
-                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-                    >
-                      {row.getVisibleCells().map((cell) => (
-                        <td key={cell.id} style={{ textAlign: 'right' }}>
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
+                  {table.getRowModel().rows.map((row) => {
+                    const isSelected = row.getIsSelected();
+                    return (
+                      <tr
+                        key={row.id}
+                        style={{
+                          borderBottom: '1px solid #f1f5f9',
+                          backgroundColor: isSelected ? '#eff6ff' : 'transparent',
+                          transition: 'background-color 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isSelected) e.currentTarget.style.backgroundColor = '#f8fafc';
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
+                        }}
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <td
+                            key={cell.id}
+                            style={{
+                              textAlign: 'right',
+                              padding: density === 'compact' ? '8px 14px' : '12px 16px',
+                            }}
+                          >
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+
+              {/* PAGINATION FOOTER */}
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 2,
+                  p: 2,
+                  borderTop: '1px solid #e2e8f0',
+                  bgcolor: '#fafafa',
+                  borderRadius: '0 0 8px 8px',
+                }}
+              >
+                {/* Left: Row Count Info & Page Size */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                  <Typography variant="caption" fontWeight={700} color="text.secondary">
+                    عرض{' '}
+                    <strong style={{ color: '#0f172a' }}>
+                      {filteredStudents.length === 0
+                        ? 0
+                        : pagination.pageIndex * pagination.pageSize + 1}
+                    </strong>{' '}
+                    -{' '}
+                    <strong style={{ color: '#0f172a' }}>
+                      {Math.min((pagination.pageIndex + 1) * pagination.pageSize, filteredStudents.length)}
+                    </strong>{' '}
+                    من أصل <strong style={{ color: '#2563eb' }}>{filteredStudents.length}</strong> طالب
+                  </Typography>
+
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      لكل صفحة:
+                    </Typography>
+                    <Select
+                      size="small"
+                      value={table.getState().pagination.pageSize}
+                      onChange={(e) => table.setPageSize(Number(e.target.value))}
+                      sx={{ height: 30, fontSize: '0.78rem', bgcolor: '#fff', '& .MuiSelect-select': { py: 0.5 } }}
+                    >
+                      {[10, 25, 50, 100].map((pageSize) => (
+                        <MenuItem key={pageSize} value={pageSize} sx={{ fontSize: '0.82rem' }}>
+                          {pageSize} صف
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </Box>
+                </Box>
+
+                {/* Right: Page Navigation Buttons */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, flexWrap: 'wrap' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>
+                    صفحة <strong>{table.getState().pagination.pageIndex + 1}</strong> من <strong>{table.getPageCount() || 1}</strong>
+                  </Typography>
+
+                  <Tooltip title="الصفحة الأولى">
+                    <span>
+                      <IconButton
+                        size="small"
+                        onClick={() => table.setPageIndex(0)}
+                        disabled={!table.getCanPreviousPage()}
+                        sx={{ border: '1px solid #e2e8f0', bgcolor: '#fff', p: 0.6 }}
+                      >
+                        <ChevronsRight size={16} />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+
+                  <Tooltip title="الصفحة السابقة">
+                    <span>
+                      <IconButton
+                        size="small"
+                        onClick={() => table.previousPage()}
+                        disabled={!table.getCanPreviousPage()}
+                        sx={{ border: '1px solid #e2e8f0', bgcolor: '#fff', p: 0.6 }}
+                      >
+                        <ChevronRight size={16} />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+
+                  {/* Page number buttons */}
+                  <Box sx={{ display: 'flex', gap: 0.5 }}>
+                    {Array.from({ length: Math.min(5, table.getPageCount()) }, (_, i) => {
+                      let pageNum = i;
+                      const total = table.getPageCount();
+                      const current = table.getState().pagination.pageIndex;
+                      if (total > 5) {
+                        if (current > 2) {
+                          pageNum = Math.min(current - 2 + i, total - 1);
+                        }
+                      }
+                      const isActive = pageNum === current;
+                      return (
+                        <Button
+                          key={pageNum}
+                          size="small"
+                          variant={isActive ? 'contained' : 'outlined'}
+                          color={isActive ? 'primary' : 'inherit'}
+                          onClick={() => table.setPageIndex(pageNum)}
+                          sx={{
+                            minWidth: 30,
+                            height: 30,
+                            p: 0,
+                            fontSize: '0.78rem',
+                            fontWeight: isActive ? 800 : 600,
+                            bgcolor: isActive ? '#2563eb' : '#fff',
+                            borderColor: '#e2e8f0',
+                          }}
+                        >
+                          {pageNum + 1}
+                        </Button>
+                      );
+                    })}
+                  </Box>
+
+                  <Tooltip title="الصفحة التالية">
+                    <span>
+                      <IconButton
+                        size="small"
+                        onClick={() => table.nextPage()}
+                        disabled={!table.getCanNextPage()}
+                        sx={{ border: '1px solid #e2e8f0', bgcolor: '#fff', p: 0.6 }}
+                      >
+                        <ChevronLeft size={16} />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+
+                  <Tooltip title="الصفحة الأخيرة">
+                    <span>
+                      <IconButton
+                        size="small"
+                        onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+                        disabled={!table.getCanNextPage()}
+                        sx={{ border: '1px solid #e2e8f0', bgcolor: '#fff', p: 0.6 }}
+                      >
+                        <ChevronsLeft size={16} />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Box>
+              </Box>
             </Box>
           ) : (
-            <Box sx={{ textAlign: 'center', py: 5, px: 2 }}>
-              <FolderPlus size={44} color="#94a3b8" />
-              <Typography variant="h6" fontWeight={700} color="#334155" sx={{ mt: 1.5 }}>
-                لا يوجد طلاب مسجلون بعد في مرحلة {activeStage}
+            <Box sx={{ textAlign: 'center', py: 8, px: 2 }}>
+              <Box
+                sx={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: '50%',
+                  bgcolor: '#f1f5f9',
+                  color: '#94a3b8',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  mx: 'auto',
+                  mb: 2,
+                }}
+              >
+                <FolderPlus size={32} />
+              </Box>
+              <Typography variant="h6" fontWeight={800} color="#334155">
+                {genderFilter !== 'all' || gradeFilter !== 'all' || searchQuery
+                  ? 'لا توجد نتائج تطابق الفلاتر المحددة'
+                  : `لا يوجد طلاب مسجلون بعد في مرحلة ${activeStage}`}
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2.5 }}>
-                ابدأ بإضافة أول طالب أو استورد بيانات الطلاب مباشرة من ملف Excel.
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 3 }}>
+                {genderFilter !== 'all' || gradeFilter !== 'all' || searchQuery
+                  ? 'جرب تغيير خيارات البحث أو تصفية البيانات.'
+                  : 'ابدأ بإضافة أول طالب أو استورد بيانات الطلاب مباشرة من ملف Excel.'}
               </Typography>
-              <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
+                {(genderFilter !== 'all' || gradeFilter !== 'all' || searchQuery) && (
+                  <Button
+                    variant="outlined"
+                    onClick={() => {
+                      setGenderFilter('all');
+                      setGradeFilter('all');
+                      setSearchQuery('');
+                    }}
+                    sx={{ borderRadius: 2 }}
+                  >
+                    إعادة ضبط الفلاتر
+                  </Button>
+                )}
                 <Button
                   variant="contained"
                   color="primary"
                   startIcon={<UserPlus size={16} />}
                   onClick={handleOpenAddDialog}
-                  sx={{ px: 3, py: 1, borderRadius: 2 }}
+                  sx={{
+                    px: 3.5,
+                    py: 1.1,
+                    borderRadius: 2,
+                    fontWeight: 800,
+                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                    boxShadow: '0 4px 14px rgba(37, 99, 235, 0.3)',
+                  }}
                 >
-                  + إضافة طالب أول في مرحلة {activeStage}
+                  + إضافة طالب في مرحلة {activeStage}
                 </Button>
               </Box>
             </Box>
           )}
         </Paper>
       </Box>
+
+      {/* Excel import preview: all parsing/validation has already run in Go.
+          The new flow auto-commits clean rows and stores the rest as a pending
+          batch that can be reviewed from the workspace at any time. */}
+      <Dialog
+        open={importDialogOpen}
+        onClose={() => !committing && !importing && handleCancelImport()}
+        maxWidth="xl"
+        fullWidth
+        dir="rtl"
+        PaperProps={{ sx: { borderRadius: 3, minHeight: '70vh' } }}
+      >
+        <DialogTitle sx={{ pb: 1, borderBottom: '1px solid #e2e8f0' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box>
+              <Typography variant="h6" fontWeight={800} color="#0f172a">معاينة استيراد بيانات الطلاب</Typography>
+              <Typography variant="caption" color="text.secondary">
+                الصفوف السليمة ستُستورد تلقائياً فور المتابعة، والباقي سيُحفظ كدفعة معلقة لمراجعتها لاحقاً.
+              </Typography>
+            </Box>
+            <IconButton disabled={committing || importing} onClick={handleCancelImport}><X size={18} /></IconButton>
+          </Box>
+        </DialogTitle>
+
+        <DialogContent sx={{ bgcolor: '#f8fafc', p: 2.5 }}>
+          {importPreview && (
+            <>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' }, gap: 1.2, mb: 2 }}>
+                {[
+                  ['سليمة', importPreview.ready, '#16a34a', 'ستُستورد تلقائياً'],
+                  ['تحتاج مراجعة', importPreview.review, '#d97706', 'دفعة معلقة للمراجعة'],
+                  ['أخطاء', importPreview.errors, '#dc2626', 'دفعة معلقة للتصحيح'],
+                  ['مكررات بالملف', importPreview.duplicate, '#2563eb', 'دفعة معلقة للدمج'],
+                  ['مرشحة للتحديث', importPreview.updates, '#7c3aed', 'دفعة معلقة للتأكيد'],
+                ].map(([label, count, color, sub]) => (
+                  <Paper key={String(label)} elevation={0} sx={{ p: 1.2, border: `1px solid ${color}22`, borderRadius: 2, textAlign: 'center', bgcolor: '#fff' }}>
+                    <Typography variant="h6" fontWeight={800} sx={{ color }}>{count}</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{label}</Typography>
+                    <Typography variant="caption" sx={{ color, fontSize: '0.68rem' }}>{sub}</Typography>
+                  </Paper>
+                ))}
+              </Box>
+
+              {importPreview.sheets.some((sheet) => sheet.rowsFound === 0) && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                  {importPreview.sheets.filter((sheet) => sheet.rowsFound === 0).map((sheet) => `${sheet.name}: 0 صف`).join(' • ')}
+                </Typography>
+              )}
+
+              <Tabs value={importStage} onChange={(_, value) => setImportStage(value)} sx={{ bgcolor: '#fff', borderRadius: 2, border: '1px solid #e2e8f0', mb: 1.5 }}>
+                {importPreview.sheets.filter((sheet) => sheet.stage).map((sheet) => (
+                  <Tab key={sheet.stage} value={sheet.stage} label={`${sheet.stage} (${sheet.rowsFound})`} />
+                ))}
+              </Tabs>
+
+              <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 2, overflow: 'auto', maxHeight: 440 }}>
+                <table style={{ width: '100%', minWidth: 980, borderCollapse: 'collapse', textAlign: 'right' }}>
+                  <thead><tr style={{ background: '#f1f5f9' }}>
+                    {['المصدر', 'الاسم', 'الرقم القومي', 'الصف / المرحلة', 'الحالة والملاحظات'].map((header) => <th key={header} style={{ padding: '12px 10px', fontSize: '0.78rem' }}>{header}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {importRows.filter((row) => row.student.stage === importStage).map((row) => {
+                      const status = row.status === 'ready' || row.status === 'update'
+                        ? { label: row.status === 'update' ? 'تحديث' : 'سليم', color: '#16a34a', bg: '#f0fdf4' }
+                        : row.status === 'review' ? { label: 'مراجعة', color: '#d97706', bg: '#fffbeb' }
+                        : row.status === 'duplicate' ? { label: 'مكرر', color: '#2563eb', bg: '#eff6ff' }
+                        : { label: 'خطأ', color: '#dc2626', bg: '#fef2f2' };
+                      return <tr key={row.id} style={{ borderTop: '1px solid #e2e8f0', background: status.bg }}>
+                        <td style={{ padding: 8, whiteSpace: 'nowrap' }}><Typography variant="caption">{row.sheet}<br />صف {row.rowNumber}</Typography></td>
+                        <td style={{ padding: 8 }}><TextField size="small" value={row.student.fullName || ''} onChange={(event) => updateImportStudent(row.id, 'fullName', event.target.value)} /></td>
+                        <td style={{ padding: 8 }}><TextField size="small" value={row.student.nationalId || ''} onChange={(event) => updateImportStudent(row.id, 'nationalId', event.target.value)} inputProps={{ style: { fontFamily: 'monospace' } }} /></td>
+                        <td style={{ padding: 8 }}><TextField size="small" value={row.student.grade || ''} onChange={(event) => updateImportStudent(row.id, 'grade', event.target.value)} helperText={row.gradeSuggestion || undefined} /></td>
+                        <td style={{ padding: 8, minWidth: 220 }}>
+                          <Chip label={status.label} size="small" sx={{ bgcolor: status.bg, color: status.color, border: `1px solid ${status.color}44`, fontWeight: 700, mb: 0.5 }} />
+                          {row.existing && <Typography variant="caption" display="block" color="#7c3aed">تحديث سجل موجود: {row.existing.grade || 'بدون صف'} ← {row.student.grade || 'بدون صف'}</Typography>}
+                          {row.issues.map((issue, index) => <Typography key={`${row.id}-${index}`} variant="caption" display="block" sx={{ color: issue.kind === 'error' ? '#dc2626' : '#a16207' }}>{issue.message}</Typography>)}
+                        </td>
+                      </tr>;
+                    })}
+                  </tbody>
+                </table>
+              </Paper>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid #e2e8f0' }}>
+          <Box sx={{ flexGrow: 1 }} />
+          <Button
+            disabled={committing || importing}
+            onClick={handleExportSkippedFromPreview}
+          >
+            تصدير الصفوف المتبقية
+          </Button>
+          <Button disabled={committing || importing} onClick={handleCancelImport}>إلغاء</Button>
+          <Button
+            variant="contained"
+            color="success"
+            disabled={committing || importing || !importRows.length}
+            onClick={handleConfirmExcelImport}
+          >
+            {committing ? 'جارٍ الحفظ...' : 'متابعة الاستيراد'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Post-import prompt: "review the 84 remaining rows now / later" */}
+      <Dialog
+        open={pendingPrompt.open}
+        onClose={() => setPendingPrompt({ open: false, session: null, pendingCount: 0 })}
+        maxWidth="sm"
+        fullWidth
+        dir="rtl"
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Check size={20} color="#16a34a" />
+          <Typography variant="h6" fontWeight={800}>تم استيراد الصفوف السليمة</Typography>
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2, textAlign: 'start' }}>
+            <Typography variant="body2" sx={{ textAlign: 'start' }}>
+              <strong>{pendingPrompt.pendingCount}</strong> صف محفوظ كدفعة معلقة في قاعدة البيانات. لن تضيع إذا أغلقت التطبيق — ستجدها في الشريط الجانبي عند العودة.
+            </Typography>
+          </Alert>
+          <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'start' }}>
+            عايز تراجع الـ {pendingPrompt.pendingCount} صف الباقيين دلوقتي؟
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button onClick={() => setPendingPrompt({ open: false, session: null, pendingCount: 0 })}>
+            أراجعهم بعدين
+          </Button>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<ClipboardList size={16} />}
+            disabled={!pendingPrompt.session}
+            onClick={async () => {
+              const sid = pendingPrompt.session?.id;
+              setPendingPrompt({ open: false, session: null, pendingCount: 0 });
+              if (sid) await openCorrectionWorkspace(sid);
+            }}
+          >
+            ابدأ المراجعة
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* ==================== 2. ADD / EDIT STUDENT MODAL DIALOG (TANSTACK FORM) ==================== */}
       <Dialog
@@ -856,7 +2128,22 @@ export const Dashboard: React.FC = () => {
                     >
                       {(field) => (
                         <>
-                          <FieldLabel required>الرقم القومي (14 رقماً)</FieldLabel>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                            <FieldLabel required>الرقم القومي (14 رقماً)</FieldLabel>
+                            <Button
+                              size="small"
+                              variant="text"
+                              startIcon={<ShieldCheck size={14} color="#2563eb" />}
+                              onClick={() => {
+                                if (field.state.value) {
+                                  handleNIDValidation(field.state.value);
+                                }
+                              }}
+                              sx={{ fontSize: '0.75rem', fontWeight: 700, p: 0.2 }}
+                            >
+                              فحص الرقم القومي
+                            </Button>
+                          </Box>
                           <TextField
                             fullWidth
                             required
@@ -894,15 +2181,45 @@ export const Dashboard: React.FC = () => {
                             helperText={
                               parsedNIDInfo.valid === true ? (
                                 <span style={{ color: '#16a34a', fontWeight: 700 }}>
-                                  ✓ الرقم القومي صحيح ({parsedNIDInfo.birthDate} • {parsedNIDInfo.gender} • {parsedNIDInfo.governorate} • العمر {parsedNIDInfo.age} سنة)
+                                  ✓ الرقم القومي صحيح ومطابق (الميلاد: {parsedNIDInfo.birthDate} • {parsedNIDInfo.gender} • {parsedNIDInfo.governorate} • العمر {parsedNIDInfo.age} سنة)
                                 </span>
                               ) : parsedNIDInfo.valid === false && parsedNIDInfo.error ? (
                                 <span style={{ color: '#ef4444', fontWeight: 600 }}>⚠️ {parsedNIDInfo.error}</span>
                               ) : (
-                                <span style={{ color: '#64748b' }}>الرجاء كتابة الرقم القومي المكون من 14 رقماً</span>
+                                <span style={{ color: '#64748b' }}>اكتب الرقم القومي ليتم استخراج تاريخ الميلاد والمحافظة وفحص الصلاحية فوراً</span>
                               )
                             }
                           />
+
+                          {/* Century Typo Quick Fix */}
+                          {parsedNIDInfo.stageWarning && (
+                            <Alert
+                              severity="warning"
+                              icon={<Sparkles size={16} color="#d97706" />}
+                              action={
+                                parsedNIDInfo.suggestedId ? (
+                                  <Button
+                                    color="warning"
+                                    size="small"
+                                    variant="contained"
+                                    onClick={() => {
+                                      const fixed = parsedNIDInfo.suggestedId!;
+                                      field.handleChange(fixed);
+                                      handleNIDValidation(fixed);
+                                    }}
+                                    sx={{ fontWeight: 800, fontSize: '0.75rem', bgcolor: '#d97706', '&:hover': { bgcolor: '#b45309' } }}
+                                  >
+                                    ⚡ تصحيح البداية إلى 3
+                                  </Button>
+                                ) : undefined
+                              }
+                              sx={{ mt: 1, py: 0.5, borderRadius: 2 }}
+                            >
+                              <Typography variant="caption" fontWeight={700}>
+                                {parsedNIDInfo.stageWarning}
+                              </Typography>
+                            </Alert>
+                          )}
                         </>
                       )}
                     </form.Field>
@@ -1012,6 +2329,84 @@ export const Dashboard: React.FC = () => {
                           </form.Field>
                         </Grid>
                       </Grid>
+                    ) : currentStage === 'ثانوي' ? (
+                      <Grid container spacing={2}>
+                        <Grid item xs={12} sm={4}>
+                          <form.Field name="stage">
+                            {(field) => (
+                              <>
+                                <FieldLabel required>المرحلة الحالية</FieldLabel>
+                                <FormControl fullWidth size="small">
+                                  <Select
+                                    value={field.state.value || 'ثانوي'}
+                                    onChange={(e) => {
+                                      const newStage = e.target.value as StageType;
+                                      field.handleChange(newStage);
+                                      form.setFieldValue('grade', schoolGrades[newStage]?.[0] || '');
+                                      if (newStage === 'ثانوي') {
+                                        form.setFieldValue('track', 'عام');
+                                      }
+                                    }}
+                                    sx={{ textAlign: 'start' }}
+                                  >
+                                    {stages.map((stg) => (
+                                      <MenuItem key={stg} value={stg}>
+                                        {stg}
+                                      </MenuItem>
+                                    ))}
+                                  </Select>
+                                </FormControl>
+                              </>
+                            )}
+                          </form.Field>
+                        </Grid>
+
+                        <Grid item xs={12} sm={4}>
+                          <form.Field name="grade">
+                            {(field) => (
+                              <>
+                                <FieldLabel required>الصف الدراسي الحالي</FieldLabel>
+                                <FormControl fullWidth size="small">
+                                  <Select
+                                    value={field.state.value || schoolGrades['ثانوي'][0]}
+                                    onChange={(e) => field.handleChange(e.target.value)}
+                                    sx={{ textAlign: 'start' }}
+                                  >
+                                    {schoolGrades['ثانوي'].map((grd) => (
+                                      <MenuItem key={grd} value={grd}>
+                                        {grd}
+                                      </MenuItem>
+                                    ))}
+                                  </Select>
+                                </FormControl>
+                              </>
+                            )}
+                          </form.Field>
+                        </Grid>
+
+                        <Grid item xs={12} sm={4}>
+                          <form.Field name="track">
+                            {(field) => (
+                              <>
+                                <FieldLabel required>نوع / مسار الثانوية</FieldLabel>
+                                <FormControl fullWidth size="small">
+                                  <Select
+                                    value={field.state.value || 'عام'}
+                                    onChange={(e) => field.handleChange(e.target.value)}
+                                    sx={{ textAlign: 'start' }}
+                                  >
+                                    {secondaryTracks.map((trk) => (
+                                      <MenuItem key={trk} value={trk}>
+                                        {trk}
+                                      </MenuItem>
+                                    ))}
+                                  </Select>
+                                </FormControl>
+                              </>
+                            )}
+                          </form.Field>
+                        </Grid>
+                      </Grid>
                     ) : (
                       <Grid container spacing={2}>
                         <Grid item xs={12} md={6}>
@@ -1080,7 +2475,7 @@ export const Dashboard: React.FC = () => {
                   sx={{ display: 'flex', alignItems: 'center', gap: 0.8, mb: 1.5, textAlign: 'start' }}
                 >
                   <Building size={18} color="#2563eb" />
-                  <span>3. بيانات الرعاية والعضوية (الكاتدرائية والإسكندرية)</span>
+                  <span>3. بيانات برنامج الرعاية الكنسية والعضوية الكنسية</span>
                 </Typography>
 
                 <Grid container spacing={2}>
@@ -1088,18 +2483,18 @@ export const Dashboard: React.FC = () => {
                     <form.Field
                       name="cathedralStudentId"
                       validators={{
-                        onChange: ({ value }) => (!value ? 'رقم الطالب الكاتدرائية مطلوب' : undefined),
+                        onChange: ({ value }) => (!value ? 'رقم الطالب في برنامج الرعاية الكنسية مطلوب' : undefined),
                       }}
                     >
                       {(field) => (
                         <>
-                          <FieldLabel required>رقم الطالب بالرعاية الكاتدرائية</FieldLabel>
+                          <FieldLabel required>رقم الطالب في برنامج الرعاية الكنسية</FieldLabel>
                           <TextField
                             fullWidth
                             required
                             value={field.state.value || ''}
                             onChange={(e) => field.handleChange(e.target.value)}
-                            placeholder="رقم الطالب بقاعدة الرعاية"
+                            placeholder="رقم الطالب في برنامج الرعاية الكنسية"
                             error={Boolean(field.state.meta.errors.length && field.state.meta.isTouched)}
                             helperText={field.state.meta.isTouched ? field.state.meta.errors.join(', ') : undefined}
                             inputProps={{ style: { textAlign: 'start' } }}
@@ -1113,18 +2508,18 @@ export const Dashboard: React.FC = () => {
                     <form.Field
                       name="cathedralFamilyId"
                       validators={{
-                        onChange: ({ value }) => (!value ? 'رقم الأسرة الكاتدرائية مطلوب' : undefined),
+                        onChange: ({ value }) => (!value ? 'رقم الأسرة في برنامج الرعاية الكنسية مطلوب' : undefined),
                       }}
                     >
                       {(field) => (
                         <>
-                          <FieldLabel required>رقم الأسرة بالرعاية الكاتدرائية</FieldLabel>
+                          <FieldLabel required>رقم الأسرة في برنامج الرعاية الكنسية</FieldLabel>
                           <TextField
                             fullWidth
                             required
                             value={field.state.value || ''}
                             onChange={(e) => field.handleChange(e.target.value)}
-                            placeholder="رقم الأسرة بقاعدة الرعاية"
+                            placeholder="رقم الأسرة في برنامج الرعاية الكنسية"
                             error={Boolean(field.state.meta.errors.length && field.state.meta.isTouched)}
                             helperText={field.state.meta.isTouched ? field.state.meta.errors.join(', ') : undefined}
                             inputProps={{ style: { textAlign: 'start' } }}
@@ -1138,12 +2533,12 @@ export const Dashboard: React.FC = () => {
                     <form.Field name="alexandriaStudentId">
                       {(field) => (
                         <>
-                          <FieldLabel>رقم الطالب بالعضوية الإسكندرية (اختياري)</FieldLabel>
+                          <FieldLabel>رقم الطالب بالعضوية الكنسية (اختياري)</FieldLabel>
                           <TextField
                             fullWidth
                             value={field.state.value || ''}
                             onChange={(e) => field.handleChange(e.target.value)}
-                            placeholder="اختياري"
+                            placeholder="رقم الطالب بالعضوية الكنسية (اختياري)"
                             inputProps={{ style: { textAlign: 'start' } }}
                           />
                         </>
@@ -1155,12 +2550,12 @@ export const Dashboard: React.FC = () => {
                     <form.Field name="alexandriaFamilyId">
                       {(field) => (
                         <>
-                          <FieldLabel>رقم الأسرة بالعضوية الإسكندرية (اختياري)</FieldLabel>
+                          <FieldLabel>رقم الأسرة بالعضوية الكنسية (اختياري)</FieldLabel>
                           <TextField
                             fullWidth
                             value={field.state.value || ''}
                             onChange={(e) => field.handleChange(e.target.value)}
-                            placeholder="اختياري"
+                            placeholder="رقم الأسرة بالعضوية الكنسية (اختياري)"
                             inputProps={{ style: { textAlign: 'start' } }}
                           />
                         </>
@@ -1240,6 +2635,76 @@ export const Dashboard: React.FC = () => {
         </DialogActions>
       </Dialog>
 
+      {/* WIPE DATABASE CONFIRMATION DIALOG */}
+      <Dialog
+        open={wipeDialogOpen}
+        onClose={() => {
+          if (!isWiping) {
+            setWipeDialogOpen(false);
+            setWipeConfirmText('');
+          }
+        }}
+        maxWidth="xs"
+        fullWidth
+        dir="rtl"
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, color: '#dc2626', borderBottom: '1px solid #f1f5f9', pb: 1.5 }}>
+          <AlertTriangle size={22} color="#dc2626" />
+          <Typography variant="h6" fontWeight={800} color="#dc2626">
+            حذف قاعدة البيانات بالكامل
+          </Typography>
+        </DialogTitle>
+
+        <DialogContent sx={{ pt: 2.5 }}>
+          <Alert severity="error" sx={{ mb: 2, textAlign: 'start' }}>
+            <strong>تحذير خطير:</strong> هذا الإجراء سيقوم بحذف كافة سجلات الطلاب والدفعات والجلسات نهائياً من قاعدة البيانات ولا يمكن التراجع عنه.
+          </Alert>
+
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, textAlign: 'start' }}>
+            لتأكيد الحذف النهائي، يرجى كتابة كلمة <strong style={{ color: '#dc2626', fontFamily: 'monospace' }}>delete</strong> في الحقل التالي:
+          </Typography>
+
+          <TextField
+            fullWidth
+            autoFocus
+            size="small"
+            placeholder="اكتب delete للتأكيد"
+            value={wipeConfirmText}
+            onChange={(e) => setWipeConfirmText(e.target.value)}
+            inputProps={{
+              style: { fontFamily: 'monospace', textAlign: 'center', fontSize: '1rem', fontWeight: 700, letterSpacing: 1 },
+              autoComplete: 'off',
+            }}
+          />
+        </DialogContent>
+
+        <DialogActions sx={{ p: 2, borderTop: '1px solid #f1f5f9', gap: 1 }}>
+          <Button
+            disabled={isWiping}
+            onClick={() => {
+              setWipeDialogOpen(false);
+              setWipeConfirmText('');
+            }}
+          >
+            إلغاء
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            disabled={wipeConfirmText.trim().toLowerCase() !== 'delete' || isWiping}
+            onClick={handleConfirmWipeDatabase}
+            startIcon={isWiping ? <CircularProgress size={16} color="inherit" /> : <Trash2 size={16} />}
+            sx={{
+              fontWeight: 700,
+              bgcolor: '#dc2626',
+              '&:hover': { bgcolor: '#b91c1c' },
+            }}
+          >
+            {isWiping ? 'جارٍ الحذف...' : 'تأكيد الحذف النهائي'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Table Context Action Menu */}
       <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose} dir="rtl">
         <MenuItem onClick={handleEditFromMenu} sx={{ gap: 1, fontSize: '0.88rem' }}>
@@ -1251,6 +2716,32 @@ export const Dashboard: React.FC = () => {
           حذف الطالب
         </MenuItem>
       </Menu>
+
+      {/* Standalone NID Checker Modal */}
+      <NIDCheckerModal
+        open={nidCheckerOpen}
+        onClose={() => setNidCheckerOpen(false)}
+        onAddStudentFromNID={(data) => {
+          setEditingStudentId(null);
+          form.reset();
+          const targetStage = (data.stage || activeStage) as StageType;
+          form.setFieldValue('stage', targetStage);
+          form.setFieldValue('grade', schoolGrades[targetStage]?.[0] || '');
+          form.setFieldValue('nationalId', data.nationalId);
+          if (data.birthDate) form.setFieldValue('birthDate', data.birthDate);
+          if (data.gender) form.setFieldValue('gender', data.gender);
+          if (data.governorate) form.setFieldValue('governorate', data.governorate);
+          setPhotoPreview(null);
+          setParsedNIDInfo({
+            valid: true,
+            nationalId: data.nationalId,
+            birthDate: data.birthDate,
+            gender: data.gender,
+            governorate: data.governorate,
+          });
+          setFormDialogOpen(true);
+        }}
+      />
     </Box>
   );
 };

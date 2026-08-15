@@ -6,12 +6,40 @@ export function AddStudent(arg1) {
   return window['go']['main']['App']['AddStudent'](arg1);
 }
 
+export function AutosavePendingImportRow(arg1, arg2) {
+  return window['go']['main']['App']['AutosavePendingImportRow'](arg1, arg2);
+}
+
+export function CommitExcelPreview(arg1) {
+  return window['go']['main']['App']['CommitExcelPreview'](arg1);
+}
+
+export function DeleteAllData() {
+  return window['go']['main']['App']['DeleteAllData']();
+}
+
 export function DeleteStudent(arg1) {
   return window['go']['main']['App']['DeleteStudent'](arg1);
 }
 
+export function ExportImportRejections(arg1) {
+  return window['go']['main']['App']['ExportImportRejections'](arg1);
+}
+
+export function ExportPendingImportRows(arg1) {
+  return window['go']['main']['App']['ExportPendingImportRows'](arg1);
+}
+
 export function ExportStudentsToExcel(arg1, arg2) {
   return window['go']['main']['App']['ExportStudentsToExcel'](arg1, arg2);
+}
+
+export function GetPendingImportRows(arg1) {
+  return window['go']['main']['App']['GetPendingImportRows'](arg1);
+}
+
+export function GetPendingImportSummary() {
+  return window['go']['main']['App']['GetPendingImportSummary']();
 }
 
 export function GetStageCounts() {
@@ -22,10 +50,46 @@ export function GetStudents(arg1, arg2) {
   return window['go']['main']['App']['GetStudents'](arg1, arg2);
 }
 
+export function IgnorePendingImportRow(arg1) {
+  return window['go']['main']['App']['IgnorePendingImportRow'](arg1);
+}
+
+export function ImportStudentBatch(arg1) {
+  return window['go']['main']['App']['ImportStudentBatch'](arg1);
+}
+
 export function ImportStudentsFromExcel(arg1) {
   return window['go']['main']['App']['ImportStudentsFromExcel'](arg1);
 }
 
 export function ParseNationalID(arg1) {
   return window['go']['main']['App']['ParseNationalID'](arg1);
+}
+
+export function ParseNationalIDWithStage(arg1, arg2) {
+  return window['go']['main']['App']['ParseNationalIDWithStage'](arg1, arg2);
+}
+
+export function PreviewExcelImport(arg1) {
+  return window['go']['main']['App']['PreviewExcelImport'](arg1);
+}
+
+export function ResolvePendingDuplicate(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ResolvePendingDuplicate'](arg1, arg2, arg3);
+}
+
+export function ResolvePendingGradeGroup(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['ResolvePendingGradeGroup'](arg1, arg2, arg3, arg4);
+}
+
+export function ResolvePendingImportRow(arg1, arg2) {
+  return window['go']['main']['App']['ResolvePendingImportRow'](arg1, arg2);
+}
+
+export function StartExcelImport() {
+  return window['go']['main']['App']['StartExcelImport']();
+}
+
+export function ValidateImportStudent(arg1) {
+  return window['go']['main']['App']['ValidateImportStudent'](arg1);
 }

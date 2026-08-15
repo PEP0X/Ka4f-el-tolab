@@ -28,7 +28,24 @@ func ExportStudentsToExcel(students []models.Student, filePath string) error {
 		logError("SetSheetView", err)
 	}
 
-	headers := []string{"م", "الاسم الكامل", "الرقم القومي", "المرحلة", "الصف", "النوع", "تاريخ الميلاد", "المحافظة", "الهاتف", "هاتف ولي الأمر", "شماس", "ملاحظات"}
+	headers := []string{
+		"م",
+		"الاسم الكامل",
+		"الرقم القومي",
+		"المرحلة",
+		"الصف",
+		"النوع",
+		"تاريخ الميلاد",
+		"المحافظة",
+		"الهاتف",
+		"هاتف ولي الأمر",
+		"رقم الطالب في برنامج الرعاية الكنسية",
+		"رقم الأسرة في برنامج الرعاية الكنسية",
+		"رقم الطالب بالعضوية الكنسية",
+		"رقم الأسرة بالعضوية الكنسية",
+		"شماس",
+		"ملاحظات",
+	}
 	for colIdx, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(colIdx+1, 1)
 		f.SetCellValue(sheetName, cell, h)
@@ -51,6 +68,10 @@ func ExportStudentsToExcel(students []models.Student, filePath string) error {
 			s.Governorate,
 			s.Phone,
 			s.ParentPhone,
+			s.CathedralStudentID,
+			s.CathedralFamilyID,
+			s.AlexandriaStudentID,
+			s.AlexandriaFamilyID,
 			deaconStr,
 			s.Notes,
 		}

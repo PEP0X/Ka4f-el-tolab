@@ -1,0 +1,162 @@
+package service
+
+import (
+	"fmt"
+	"log/slog"
+
+	"Ka4f-El-Tolab/internal/excel"
+	"Ka4f-El-Tolab/internal/models"
+	"Ka4f-El-Tolab/internal/repository"
+
+	"gorm.io/gorm"
+)
+
+// ExcelService orchestrates Excel import/export operations.
+type ExcelService struct {
+	db         *gorm.DB
+	studentSvc *StudentService
+	importRepo *repository.ImportSessionRepository
+}
+
+func NewExcelService(db *gorm.DB, studentSvc *StudentService) *ExcelService {
+	return &ExcelService{
+		db:         db,
+		studentSvc: studentSvc,
+		importRepo: repository.NewImportSessionRepository(db),
+	}
+}
+
+// PreviewImport parses and validates an Excel file without writing to the database.
+// Existing records are attached to support user-reviewed upserts.
+func (s *ExcelService) PreviewImport(filePath string) (models.ImportPreview, error) {
+	preview, err := excel.PreviewFile(filePath)
+	if err != nil {
+		return preview, err
+	}
+
+	// Attach existing records for upsert detection
+	for i := range preview.Rows {
+		row := &preview.Rows[i]
+		if row.Student.NationalID == "" {
+			continue
+		}
+		existing, err := s.studentSvc.repo.FindByNationalID(row.Student.NationalID)
+		if err != nil {
+			slog.Warn("failed to check existing student", "nid", row.Student.NationalID, "error", err)
+			continue
+		}
+		if existing != nil {
+			row.Existing = existing
+			if row.Status == "ready" {
+				row.Status = "update"
+			}
+		}
+	}
+	preview.Recalculate()
+	return preview, nil
+}
+
+// CommitPreview writes clean rows and persists rows needing human decision.
+// After commit, forces a WAL checkpoint for durability.
+func (s *ExcelService) CommitPreview(preview models.ImportPreview) (models.CommitPreviewResult, error) {
+	// Normalize all ready rows before commit
+	for i := range preview.Rows {
+		if preview.Rows[i].Status != "ready" {
+			continue
+		}
+		normalized, err := excel.NormalizeReviewedStudent(preview.Rows[i].Student)
+		if err != nil {
+			return models.CommitPreviewResult{}, fmt.Errorf("تعذر اعتماد الصف السليم %d: %w", preview.Rows[i].RowNumber, err)
+		}
+		preview.Rows[i].Student = normalized
+	}
+
+	session, batchResult, err := s.importRepo.CreateSession(preview, s.studentSvc.ImportBatch)
+	if err != nil {
+		return models.CommitPreviewResult{}, err
+	}
+
+	slog.Info("import committed",
+		"session", session.ID,
+		"inserted", batchResult.Inserted,
+		"updated", batchResult.Updated,
+		"pending", session.PendingCount,
+	)
+
+	return models.CommitPreviewResult{
+		Session:     session,
+		BatchResult: batchResult,
+	}, nil
+}
+
+// GetPendingSummary returns active import sessions.
+func (s *ExcelService) GetPendingSummary() (models.PendingImportSummary, error) {
+	return s.importRepo.GetActiveSummary()
+}
+
+// GetPendingRows returns pending rows for a session.
+func (s *ExcelService) GetPendingRows(sessionID string) ([]models.PendingImportRowView, error) {
+	return s.importRepo.GetPendingRows(sessionID)
+}
+
+// AutosavePendingRow saves a partial correction.
+func (s *ExcelService) AutosavePendingRow(id string, row models.ImportRow) error {
+	return s.importRepo.SavePendingRow(id, row)
+}
+
+// ValidateStudent validates a student for import correction.
+func (s *ExcelService) ValidateStudent(student models.Student) models.StudentValidation {
+	normalized, err := excel.NormalizeReviewedStudent(student)
+	if err != nil {
+		return models.StudentValidation{Valid: false, Message: err.Error(), Student: student}
+	}
+	return models.StudentValidation{Valid: true, Student: normalized}
+}
+
+// ResolvePendingRow resolves a single pending row.
+func (s *ExcelService) ResolvePendingRow(id string, student models.Student) (models.ImportBatchResult, error) {
+	validation := s.ValidateStudent(student)
+	if !validation.Valid {
+		return models.ImportBatchResult{}, fmt.Errorf("لا يمكن الحفظ: %s", validation.Message)
+	}
+	return s.importRepo.ResolveRow(id, validation.Student, s.studentSvc.ImportBatch)
+}
+
+// ResolveDuplicate resolves a duplicate conflict.
+func (s *ExcelService) ResolveDuplicate(winnerID string, loserIDs []string, student models.Student) (models.ImportBatchResult, error) {
+	validation := s.ValidateStudent(student)
+	if !validation.Valid {
+		return models.ImportBatchResult{}, fmt.Errorf("لا يمكن الدمج: %s", validation.Message)
+	}
+	return s.importRepo.ResolveDuplicate(winnerID, loserIDs, validation.Student, s.studentSvc.ImportBatch)
+}
+
+// ResolveGradeGroup resolves all rows in a grade group.
+func (s *ExcelService) ResolveGradeGroup(sessionID, stage, groupKey, grade string) (int, error) {
+	return s.importRepo.ResolveGradeGroup(sessionID, stage, groupKey, grade, excel.NormalizeReviewedStudent, s.studentSvc.ImportBatch)
+}
+
+// IgnorePendingRow marks a pending row as ignored.
+func (s *ExcelService) IgnorePendingRow(id string) error {
+	return s.importRepo.IgnoreRow(id)
+}
+
+// ExportRejections creates an Excel report for skipped rows.
+func (s *ExcelService) ExportRejections(rows []models.ImportRow, filePath string) error {
+	return excel.ExportRejectionReport(filePath, rows)
+}
+
+// ExportStudents generates an Excel spreadsheet of students.
+func (s *ExcelService) ExportStudents(students []models.Student, filePath string) error {
+	return excel.ExportStudentsToExcel(students, filePath)
+}
+
+// GetExportablePendingRows returns pending rows for export.
+func (s *ExcelService) GetExportablePendingRows(sessionID string) ([]models.ImportRow, error) {
+	return s.importRepo.GetExportableRows(sessionID)
+}
+
+// DeleteAllImportData removes all import sessions and pending rows.
+func (s *ExcelService) DeleteAllImportData() error {
+	return s.importRepo.DeleteAll()
+}
