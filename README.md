@@ -6,11 +6,12 @@
   ### نظام سطح المكتب الذكي لإدارة بيانات الطلاب ومدارس الأحد والأنشطة الكنسية
   **Smart Cross-Platform Desktop Student Management & Excel Automation System**
 
+  [![Release](https://img.shields.io/badge/Release-v1.1.0-blue?style=flat&logo=github)](https://github.com/PEP0X/Ka4f-el-tolab/releases/latest)
   [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
   [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat&logo=react)](https://reactjs.org/)
   [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=flat&logo=typescript)](https://www.typescriptlang.org/)
   [![Wails](https://img.shields.io/badge/Wails-v2-DF0000?style=flat&logo=wails)](https://wails.io/)
-  [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blue?style=flat)](#-تحميل-البرنامج--downloads)
+  [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blue?style=flat)](#-تحميل-البرنامج--downloads--releases)
   [![Database](https://img.shields.io/badge/Database-SQLite%20(Pure%20Go%20%2B%20WAL)-003B57?style=flat&logo=sqlite)](https://github.com/glebarez/sqlite)
   [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -57,13 +58,53 @@
 
 ## 📥 تحميل البرنامج | Downloads & Releases
 
-يمكنك تحميل أحدث نسخة جاهزة للتشغيل من صفحة [**GitHub Releases**](https://github.com/PEP0X/Ka4f-el-tolab/releases):
+يمكنك تحميل أي إصدار من البرنامج مباشرة من الروابط التالية أو عبر زيارة صفحة [**GitHub Releases**](https://github.com/PEP0X/Ka4f-el-tolab/releases):
 
-| نظام التشغيل | نوع الملف | رابط التحميل |
-| :--- | :--- | :--- |
-| **Windows 10 / 11 (64-bit)** | **Setup Installer (NSIS)** | [تحميل برنامج التثبيت (.exe)](https://github.com/PEP0X/Ka4f-el-tolab/releases/latest) |
-| **Windows 10 / 11 (64-bit)** | **نسخة محمولة (Portable)** | [تحميل البرنامج المباشر (.exe)](https://github.com/PEP0X/Ka4f-el-tolab/releases/latest) |
-| **macOS (Apple Silicon M1/M2/M3)** | **App Bundle (.zip)** | [تحميل نسخة الماك (.zip)](https://github.com/PEP0X/Ka4f-el-tolab/releases/latest) |
+---
+
+### 🌟 الإصدار الأحدث: `v1.1.0` (Latest Release)
+> **تاريخ الإصدار**: أغسطس 2026 | **حالة الإصدار**: مستقر (Stable)  
+> **أبرز التحديثات**: تصدير متقدم لملفات Excel مدعوم بالرسوم البيانية والإحصائيات، ترويسة وهوية كنسية احترافية قابلة للطباعة، كاش فائق السرعة للوحة التحكم، نافذة تفاعلية شاملة لبيانات الطالب، معالجة وتدقيق كامل لفرق المرحلة الجامعية.
+
+| نظام التشغيل (OS) | نوع الملف (Package Type) | المعمارية (Arch) | رابط التحميل المباشر (Direct Download) |
+| :--- | :--- | :--- | :--- |
+| 🪟 **Windows 10 / 11** | **Setup Installer (NSIS)** | 64-bit (x64) | [⬇️ تحميل مثبت ويندوز (.exe)](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.1.0/Ka4f-El-Tolab-amd64-installer.exe) |
+| 🪟 **Windows 10 / 11** | **نسخة محمولة (Portable)** | 64-bit (x64) | [⬇️ تحميل النسخة المحمولة (.exe)](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.1.0/Ka4f-el-tolab.exe) |
+| 🍏 **macOS (Apple Silicon)** | **حزمة تطبيق (App Bundle)** | ARM64 (M1/M2/M3/M4) | [⬇️ تحميل نسخة الماك (.zip)](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.1.0/Ka4f-El-Tolab-darwin-arm64.zip) |
+| 📦 **كود المصدر (Source Code)** | **Source Code Archive** | All | [⬇️ كود المصدر (.zip)](https://github.com/PEP0X/Ka4f-el-tolab/archive/refs/tags/v1.1.0.zip) |
+
+🔗 [عرض تفاصيل وسجل تغييرات إصدار v1.1.0 الكاملة على GitHub ↗](https://github.com/PEP0X/Ka4f-el-tolab/releases/tag/v1.1.0)
+
+---
+
+### 📦 الإصدار السابق: `v1.0.0` (Initial Release)
+> **تاريخ الإصدار**: أغسطس 2026 | **حالة الإصدار**: أرشيف (Archived)  
+> **أبرز المزايا**: التدشين الأولي لمحرك الرقم القومي المصري، مستورد Excel بدون كتابة مسبقة (Zero-Write Preview)، ومساحة عمل تفاعلية بـ 4 تبويبات لمعالجة الأخطاء والتكرارات، وقاعدة بيانات SQLite مدمجة CGO-Free.
+
+| نظام التشغيل (OS) | نوع الملف (Package Type) | المعمارية (Arch) | رابط التحميل المباشر (Direct Download) |
+| :--- | :--- | :--- | :--- |
+| 🪟 **Windows 10 / 11** | **Setup Installer (NSIS)** | 64-bit (x64) | [⬇️ تحميل مثبت ويندوز (.exe)](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.0.0/Ka4f-El-Tolab-amd64-installer.exe) |
+| 🪟 **Windows 10 / 11** | **نسخة محمولة (Portable)** | 64-bit (x64) | [⬇️ تحميل النسخة المحمولة (.exe)](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.0.0/Ka4f-el-tolab.exe) |
+| 📦 **كود المصدر (Source Code)** | **Source Code Archive** | All | [⬇️ كود المصدر (.zip)](https://github.com/PEP0X/Ka4f-el-tolab/archive/refs/tags/v1.0.0.zip) |
+
+🔗 [عرض تفاصيل وسجل تغييرات إصدار v1.0.0 على GitHub ↗](https://github.com/PEP0X/Ka4f-el-tolab/releases/tag/v1.0.0)
+
+---
+
+### 📑 جدول جميع الإصدارات | Release History & Download Matrix
+
+| الإصدار (Version) | الحالة (Status) | تاريخ الصدور (Date) | أهم الإضافات (Key Features) | روابط التحميل (Downloads) |
+| :--- | :---: | :---: | :--- | :--- |
+| [**v1.1.0**](https://github.com/PEP0X/Ka4f-el-tolab/releases/tag/v1.1.0) | 🟢 **الأحدث (Latest)** | 2026-08 | رسوم بيانية في التصدير، كاش للوحة التحكم، نافذة تفاصيل الطالب، معالجة فرق الجامعة | [EXE Installer](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.1.0/Ka4f-El-Tolab-amd64-installer.exe) \| [Portable](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.1.0/Ka4f-el-tolab.exe) \| [macOS](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.1.0/Ka4f-El-Tolab-darwin-arm64.zip) |
+| [**v1.0.0**](https://github.com/PEP0X/Ka4f-el-tolab/releases/tag/v1.0.0) | ⚪ مستقر (Stable) | 2026-08 | الإطلاق الأولي، محرك الرقم القومي، مساحة تصحيح Excel، قاعدة بيانات SQLite WAL | [EXE Installer](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.0.0/Ka4f-El-Tolab-amd64-installer.exe) \| [Portable](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.0.0/Ka4f-el-tolab.exe) |
+
+---
+
+### 🖥️ متطلبات التشغيل (System Requirements)
+- **Windows**: Windows 10 أو Windows 11 (64-bit) — يتطلب Microsoft Edge WebView2 (مدمج تلقائياً في أنظمة ويندوز الحديثة).
+- **macOS**: macOS Monterey (12.0) أو أحدث (يدعم معالجات Apple Silicon M-Series).
+- **مساحة التخزين**: 100 ميجابايت مساحة فارغة.
+- **الذاكرة العشوائية (RAM)**: 2 جيجابايت كحد أدنى.
 
 ---
 
