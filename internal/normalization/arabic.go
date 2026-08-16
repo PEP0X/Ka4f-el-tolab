@@ -49,3 +49,92 @@ func ConvertDigits(value string) string {
 	}
 	return sb.String()
 }
+
+// NormalizeForSearch produces a canonical searchable string (Arabic normalization, digit conversion, lowercase, punctuation removal).
+func NormalizeForSearch(value string) string {
+	if value == "" {
+		return ""
+	}
+	v := ConvertDigits(value)
+	v = NormalizeArabic(v)
+	v = strings.ToLower(v)
+	// Replace common punctuation with spaces
+	v = strings.Map(func(r rune) rune {
+		if strings.ContainsRune("-_.,;:()[]{}\"'`~+=*&^%$#@!|/\\<>?", r) {
+			return ' '
+		}
+		return r
+	}, v)
+	return CleanText(v)
+}
+
+// MatchTokens checks if all query tokens match within any of the provided target fields,
+// and returns a relevance score.
+func MatchTokens(queryTokens []string, fields ...string) (bool, int) {
+	if len(queryTokens) == 0 {
+		return true, 0
+	}
+
+	normFields := make([]string, len(fields))
+	for i, f := range fields {
+		normFields[i] = NormalizeForSearch(f)
+	}
+
+	combined := strings.Join(normFields, " ")
+	if combined == "" {
+		return false, 0
+	}
+
+	totalScore := 0
+	for _, token := range queryTokens {
+		tokenMatched := false
+		for i, field := range normFields {
+			if field == "" {
+				continue
+			}
+			if field == token {
+				// Exact match in a field
+				if i == 0 { // Full name
+					totalScore += 100
+				} else {
+					totalScore += 50
+				}
+				tokenMatched = true
+			} else if strings.HasPrefix(field, token) {
+				// Prefix match
+				if i == 0 {
+					totalScore += 60
+				} else {
+					totalScore += 30
+				}
+				tokenMatched = true
+			} else if strings.Contains(field, token) {
+				// Substring match
+				if i == 0 {
+					totalScore += 40
+				} else {
+					totalScore += 20
+				}
+				tokenMatched = true
+			}
+		}
+
+		if !tokenMatched {
+			// If any token doesn't match anywhere, whole query fails
+			return false, 0
+		}
+	}
+
+	// Extra bonuses
+	primary := normFields[0]
+	fullQuery := strings.Join(queryTokens, " ")
+	if primary == fullQuery {
+		totalScore += 500 // Perfect exact full name match
+	} else if strings.HasPrefix(primary, fullQuery) {
+		totalScore += 250 // Exact name prefix match
+	} else if strings.Contains(primary, fullQuery) {
+		totalScore += 150 // Full query contiguous substring in name
+	}
+
+	return true, totalScore
+}

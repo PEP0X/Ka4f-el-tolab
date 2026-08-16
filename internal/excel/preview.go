@@ -39,6 +39,9 @@ func PreviewFile(filePath string) (models.ImportPreview, error) {
 
 	preview := models.ImportPreview{SessionID: uuid.NewString(), SourceFilename: filepath.Base(filePath), Sheets: []models.ImportSheet{}, Rows: []models.ImportRow{}}
 	for _, sheetName := range f.GetSheetList() {
+		if isGuideSheet(sheetName) {
+			continue
+		}
 		stage, ok := stageForSheet(sheetName)
 		if !ok {
 			preview.Sheets = append(preview.Sheets, models.ImportSheet{Name: sheetName, Stage: "", RowsFound: 0, Warning: "اسم الشيت غير معتمد؛ تم تجاهله"})
@@ -51,9 +54,16 @@ func PreviewFile(filePath string) (models.ImportPreview, error) {
 		}
 		sheet := models.ImportSheet{Name: sheetName, Stage: stage}
 		photos := sheetPhotos(f, sheetName)
+
+		var headerRow []string
+		if len(rows) > 1 {
+			headerRow = rows[1] // Excel row 2 is the header row
+		}
+		ci := parseHeaderIndices(headerRow, stage)
+
 		for index := 2; index < len(rows); index++ { // Excel row 3 and onwards
 			row := rows[index]
-			student, rawGrade, hasName := studentForRow(row, stage)
+			student, rawGrade, hasName := studentForRow(row, stage, ci)
 			if !hasName { // blank names are intentionally skipped, not errors
 				continue
 			}
@@ -74,6 +84,184 @@ func PreviewFile(filePath string) (models.ImportPreview, error) {
 	return preview, nil
 }
 
+type columnIndices struct {
+	fullName            int
+	nationalID          int
+	grade               int
+	track               int
+	schoolName          int
+	universityName      int
+	faculty             int
+	studyYears          int
+	universityYear      int
+	phone               int
+	parentPhone         int
+	address             int
+	churchFamilyID      int
+	cathedralStudentID  int
+	cathedralFamilyID   int
+	alexandriaStudentID int
+	alexandriaFamilyID  int
+	notes               int
+}
+
+func parseHeaderIndices(headers []string, stage string) columnIndices {
+	ci := columnIndices{
+		fullName: -1, nationalID: -1, grade: -1, track: -1, schoolName: -1,
+		universityName: -1, faculty: -1, studyYears: -1, universityYear: -1,
+		phone: -1, parentPhone: -1, address: -1, churchFamilyID: -1,
+		cathedralStudentID: -1, cathedralFamilyID: -1, alexandriaStudentID: -1, alexandriaFamilyID: -1, notes: -1,
+	}
+
+	for i, h := range headers {
+		norm := normalizeArabic(h)
+		clean := strings.ToLower(norm)
+
+		if strings.Contains(clean, "اسم الطالب") || strings.Contains(clean, "أسم الطالب") || (strings.Contains(clean, "الاسم") && !strings.Contains(clean, "رب") && !strings.Contains(clean, "مدرسة") && !strings.Contains(clean, "جامعة") && !strings.Contains(clean, "كلية") && !strings.Contains(clean, "اسرة") && !strings.Contains(clean, "أسرة")) {
+			if ci.fullName == -1 {
+				ci.fullName = i
+			}
+		} else if strings.Contains(clean, "قوم") {
+			if ci.nationalID == -1 {
+				ci.nationalID = i
+			}
+		} else if strings.Contains(clean, "مسار") || strings.Contains(clean, "نوع الثانوية") || strings.Contains(clean, "تخصص الثانوية") {
+			if ci.track == -1 {
+				ci.track = i
+			}
+		} else if strings.Contains(clean, "مدرس") {
+			if ci.schoolName == -1 {
+				ci.schoolName = i
+			}
+		} else if strings.Contains(clean, "جامع") || strings.Contains(clean, "معهد") {
+			if ci.universityName == -1 {
+				ci.universityName = i
+			}
+		} else if strings.Contains(clean, "كلي") || (strings.Contains(clean, "تخصص") && stage == "جامعة") {
+			if ci.faculty == -1 {
+				ci.faculty = i
+			}
+		} else if strings.Contains(clean, "سنين") || strings.Contains(clean, "سنوات") || strings.Contains(clean, "مدة الدراسة") {
+			if ci.studyYears == -1 {
+				ci.studyYears = i
+			}
+		} else if strings.Contains(clean, "فرقة") || strings.Contains(clean, "سنة دراسية") || strings.Contains(clean, "صف") || strings.Contains(clean, "سنة") || strings.Contains(clean, "حالة") {
+			if stage == "جامعة" {
+				if ci.universityYear == -1 {
+					ci.universityYear = i
+				}
+			} else {
+				if ci.grade == -1 {
+					ci.grade = i
+				}
+			}
+		} else if strings.Contains(clean, "ولي") || strings.Contains(clean, "اب") || strings.Contains(clean, "ام") {
+			if ci.parentPhone == -1 {
+				ci.parentPhone = i
+			}
+		} else if strings.Contains(clean, "تليفون") || strings.Contains(clean, "هاتف") || strings.Contains(clean, "موبايل") {
+			if ci.phone == -1 {
+				ci.phone = i
+			}
+		} else if strings.Contains(clean, "عنوان") {
+			if ci.address == -1 {
+				ci.address = i
+			}
+		} else if strings.Contains(clean, "كشوفات الكنيسة") || strings.Contains(clean, "اسرة الكنيسة") || strings.Contains(clean, "اسرة كنيسة") || strings.Contains(clean, "أسرة الكنيسة") {
+			if ci.churchFamilyID == -1 {
+				ci.churchFamilyID = i
+			}
+		} else if strings.Contains(clean, "طالب") && (strings.Contains(clean, "رعاية") || strings.Contains(clean, "كاتدرائية")) {
+			if ci.cathedralStudentID == -1 {
+				ci.cathedralStudentID = i
+			}
+		} else if (strings.Contains(clean, "اسرة") || strings.Contains(clean, "أسرة")) && (strings.Contains(clean, "رعاية") || strings.Contains(clean, "كاتدرائية")) {
+			if ci.cathedralFamilyID == -1 {
+				ci.cathedralFamilyID = i
+			}
+		} else if strings.Contains(clean, "طالب") && (strings.Contains(clean, "عضوية") || strings.Contains(clean, "اسكندرية") || strings.Contains(clean, "إسكندرية")) {
+			if ci.alexandriaStudentID == -1 {
+				ci.alexandriaStudentID = i
+			}
+		} else if (strings.Contains(clean, "اسرة") || strings.Contains(clean, "أسرة")) && (strings.Contains(clean, "عضوية") || strings.Contains(clean, "اسكندرية") || strings.Contains(clean, "إسكندرية")) {
+			if ci.alexandriaFamilyID == -1 {
+				ci.alexandriaFamilyID = i
+			}
+		} else if strings.Contains(clean, "ملاحظات") || strings.Contains(clean, "ملاحظة") {
+			if ci.notes == -1 {
+				ci.notes = i
+			}
+		}
+	}
+
+	// Fallback to defaults if headers were not present / matched
+	if ci.fullName == -1 {
+		ci.fullName = 2
+	}
+	if ci.nationalID == -1 {
+		ci.nationalID = 3
+	}
+	if stage == "جامعة" {
+		if ci.universityName == -1 {
+			ci.universityName = 4
+		}
+		if ci.faculty == -1 {
+			ci.faculty = 5
+		}
+		if ci.studyYears == -1 {
+			ci.studyYears = 6
+		}
+		if ci.universityYear == -1 {
+			ci.universityYear = 7
+		}
+		if ci.cathedralStudentID == -1 {
+			ci.cathedralStudentID = 8
+		}
+		if ci.cathedralFamilyID == -1 {
+			ci.cathedralFamilyID = 9
+		}
+		if ci.alexandriaStudentID == -1 {
+			ci.alexandriaStudentID = 10
+		}
+		if ci.alexandriaFamilyID == -1 {
+			ci.alexandriaFamilyID = 11
+		}
+		if ci.notes == -1 {
+			ci.notes = 12
+		}
+	} else {
+		if ci.grade == -1 {
+			ci.grade = 4
+		}
+		if ci.cathedralStudentID == -1 {
+			ci.cathedralStudentID = 5
+		}
+		if ci.cathedralFamilyID == -1 {
+			ci.cathedralFamilyID = 6
+		}
+		if ci.alexandriaStudentID == -1 {
+			ci.alexandriaStudentID = 7
+		}
+		if ci.alexandriaFamilyID == -1 {
+			ci.alexandriaFamilyID = 8
+		}
+		if ci.notes == -1 {
+			ci.notes = 9
+		}
+	}
+
+	return ci
+}
+
+func isGuideSheet(name string) bool {
+	norm := normalizeArabic(name)
+	return strings.Contains(norm, "دليل") ||
+		strings.Contains(norm, "تعليمات") ||
+		strings.Contains(norm, "ارشاد") ||
+		strings.Contains(strings.ToLower(name), "guide") ||
+		strings.Contains(strings.ToLower(name), "instruction")
+}
+
 func stageForSheet(name string) (string, bool) {
 	key := normalizeArabic(name)
 	stages := map[string]string{
@@ -83,35 +271,68 @@ func stageForSheet(name string) (string, bool) {
 		normalizeArabic("طلاب المرحلة الثانوية"):    "ثانوي",
 		normalizeArabic("طلاب المعاهد والجامعات"):   "جامعة",
 	}
-	stage, ok := stages[key]
-	return stage, ok
+	if stage, ok := stages[key]; ok {
+		return stage, true
+	}
+	if strings.Contains(key, "حضان") || strings.Contains(key, "kg") {
+		return "حضانات", true
+	}
+	if strings.Contains(key, "ابتدائ") {
+		return "ابتدائي", true
+	}
+	if strings.Contains(key, "اعداد") {
+		return "إعدادي", true
+	}
+	if strings.Contains(key, "ثانو") {
+		return "ثانوي", true
+	}
+	if strings.Contains(key, "جامع") || strings.Contains(key, "معهد") || strings.Contains(key, "معاهد") {
+		return "جامعة", true
+	}
+	return "", false
 }
 
-func studentForRow(row []string, stage string) (models.Student, string, bool) {
+func studentForRow(row []string, stage string, ci columnIndices) (models.Student, string, bool) {
 	cell := func(index int) string {
 		if index >= 0 && index < len(row) {
 			return cleanText(row[index])
 		}
 		return ""
 	}
-	name := cell(2) // columns follow the supplied template; A is sequence and B is photo
+
+	name := cell(ci.fullName)
 	if name == "" {
 		return models.Student{}, "", false
 	}
+
 	s := models.Student{
-		FullName: cleanText(name), NationalID: cell(3), Stage: stage,
-		DeaconStatus: false,
+		FullName:            cleanText(name),
+		NationalID:          cell(ci.nationalID),
+		Stage:               stage,
+		SchoolName:          cell(ci.schoolName),
+		Track:               cell(ci.track),
+		Phone:               cell(ci.phone),
+		ParentPhone:         cell(ci.parentPhone),
+		Address:             cell(ci.address),
+		ChurchFamilyID:      optionalNumber(cell(ci.churchFamilyID)),
+		CathedralStudentID:  optionalNumber(cell(ci.cathedralStudentID)),
+		CathedralFamilyID:   optionalNumber(cell(ci.cathedralFamilyID)),
+		AlexandriaStudentID: optionalNumber(cell(ci.alexandriaStudentID)),
+		AlexandriaFamilyID:  optionalNumber(cell(ci.alexandriaFamilyID)),
+		Notes:               cell(ci.notes),
+		DeaconStatus:        false,
 	}
+
 	if stage == "جامعة" {
-		s.UniversityName, s.Faculty, s.StudyYears = cell(4), cell(5), optionalNumber(cell(6))
-		s.UniversityYear = cell(7)
-		s.CathedralStudentID, s.CathedralFamilyID = optionalNumber(cell(8)), optionalNumber(cell(9))
-		s.AlexandriaStudentID, s.AlexandriaFamilyID, s.Notes = optionalNumber(cell(10)), optionalNumber(cell(11)), cell(12)
+		s.UniversityName = cell(ci.universityName)
+		s.Faculty = cell(ci.faculty)
+		s.StudyYears = optionalNumber(cell(ci.studyYears))
+		s.UniversityYear = cell(ci.universityYear)
 		return s, s.UniversityYear, true
 	}
-	s.CathedralStudentID, s.CathedralFamilyID = optionalNumber(cell(5)), optionalNumber(cell(6))
-	s.AlexandriaStudentID, s.AlexandriaFamilyID, s.Notes = optionalNumber(cell(7)), optionalNumber(cell(8)), cell(9)
-	return s, cell(4), true
+
+	s.Grade = cell(ci.grade)
+	return s, s.Grade, true
 }
 
 // NormalizeReviewedStudent repeats the authoritative validation immediately
@@ -238,17 +459,50 @@ func markFileDuplicates(rows []models.ImportRow) {
 // Name-only matches stay separate from exact national-ID conflicts. They need
 // a different human decision because matching names may still be different students.
 func markFuzzyNameDuplicates(rows []models.ImportRow) {
-	for i := range rows {
-		if rows[i].Status == rowDuplicate {
+	n := len(rows)
+	if n < 2 {
+		return
+	}
+
+	// Pre-normalize all names and convert to runes once
+	normRunes := make([][]rune, n)
+	for i := 0; i < n; i++ {
+		if rows[i].Status == rowDuplicate || rows[i].Student.FullName == "" {
 			continue
 		}
+		normRunes[i] = []rune(normalizeArabic(rows[i].Student.FullName))
+	}
+
+	for i := 0; i < n; i++ {
+		if rows[i].Status == rowDuplicate || len(normRunes[i]) == 0 {
+			continue
+		}
+		rA := normRunes[i]
+		lenA := len(rA)
+
 		for j := 0; j < i; j++ {
-			if rows[j].Status == rowDuplicate || rows[i].Student.NationalID == rows[j].Student.NationalID {
+			if rows[j].Status == rowDuplicate || len(normRunes[j]) == 0 || rows[i].Student.NationalID == rows[j].Student.NationalID {
 				continue
 			}
-			if similarity(normalizeArabic(rows[i].Student.FullName), normalizeArabic(rows[j].Student.FullName)) < 0.94 {
+			rB := normRunes[j]
+			lenB := len(rB)
+
+			diff := lenA - lenB
+			if diff < 0 {
+				diff = -diff
+			}
+			maxLen := lenA
+			if lenB > maxLen {
+				maxLen = lenB
+			}
+			if float64(diff)/float64(maxLen) > 0.06001 {
 				continue
 			}
+
+			if normalization.RuneSimilarity(rA, rB) < 0.94 {
+				continue
+			}
+
 			rows[i].Status, rows[j].Status = "fuzzy_duplicate", "fuzzy_duplicate"
 			rows[i].DuplicateOf, rows[j].DuplicateOf = rows[j].ID, rows[i].ID
 			issue := models.ImportIssue{Kind: "fuzzy_duplicate", Field: "الاسم", Message: "تشابه اسم مع رقم قومي مختلف؛ راجع قبل الدمج أو استورد السجلين"}

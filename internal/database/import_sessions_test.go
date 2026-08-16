@@ -77,7 +77,7 @@ func TestCreateImportSessionImportsCleanRowsAndPersistsPendingRows(t *testing.T)
 	}
 	preview.Recalculate()
 
-	session, result, err := importRepo.CreateSession(preview, studentRepo.ImportBatch)
+	session, result, err := importRepo.CreateSession(preview, studentRepo.ImportBatchTx)
 	if err != nil {
 		t.Fatalf("CreateImportSession failed: %v", err)
 	}

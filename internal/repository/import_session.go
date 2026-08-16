@@ -24,19 +24,23 @@ func NewImportSessionRepository(db *sql.DB) *ImportSessionRepository {
 
 func scanPendingRow(scanner interface{ Scan(dest ...any) error }) (*models.PendingImportRow, error) {
 	var row models.PendingImportRow
-	var resolvedAt sql.NullTime
+	var (
+		id, sessionID, stage, issueType, rawData, groupKey, suggestedValue, conflictRowID, status, resolvedData sql.NullString
+		suggestionConfidence                                                                                   sql.NullFloat64
+		resolvedAt                                                                                             sql.NullTime
+	)
 	err := scanner.Scan(
-		&row.ID,
-		&row.SessionID,
-		&row.Stage,
-		&row.IssueType,
-		&row.RawData,
-		&row.GroupKey,
-		&row.SuggestedValue,
-		&row.SuggestionConfidence,
-		&row.ConflictRowID,
-		&row.Status,
-		&row.ResolvedData,
+		&id,
+		&sessionID,
+		&stage,
+		&issueType,
+		&rawData,
+		&groupKey,
+		&suggestedValue,
+		&suggestionConfidence,
+		&conflictRowID,
+		&status,
+		&resolvedData,
 		&resolvedAt,
 		&row.CreatedAt,
 		&row.UpdatedAt,
@@ -44,6 +48,17 @@ func scanPendingRow(scanner interface{ Scan(dest ...any) error }) (*models.Pendi
 	if err != nil {
 		return nil, err
 	}
+	row.ID = id.String
+	row.SessionID = sessionID.String
+	row.Stage = stage.String
+	row.IssueType = issueType.String
+	row.RawData = rawData.String
+	row.GroupKey = groupKey.String
+	row.SuggestedValue = suggestedValue.String
+	row.SuggestionConfidence = suggestionConfidence.Float64
+	row.ConflictRowID = conflictRowID.String
+	row.Status = status.String
+	row.ResolvedData = resolvedData.String
 	if resolvedAt.Valid {
 		row.ResolvedAt = &resolvedAt.Time
 	}
@@ -53,7 +68,7 @@ func scanPendingRow(scanner interface{ Scan(dest ...any) error }) (*models.Pendi
 // CreateSession atomically imports ready rows and persists pending rows.
 func (r *ImportSessionRepository) CreateSession(
 	preview models.ImportPreview,
-	importBatch func([]models.Student) (models.ImportBatchResult, error),
+	importBatchTx func(Querier, []models.Student) (models.ImportBatchResult, error),
 ) (models.ImportSession, models.ImportBatchResult, error) {
 
 	session := models.ImportSession{}
@@ -93,10 +108,10 @@ func (r *ImportSessionRepository) CreateSession(
 		})
 	}
 
-	// Import ready rows using the provided batch function
+	// Import ready rows inside the current transaction
 	if len(ready) > 0 {
 		var err error
-		batchResult, err = importBatch(ready)
+		batchResult, err = importBatchTx(tx, ready)
 		if err != nil {
 			return session, batchResult, err
 		}
@@ -237,9 +252,9 @@ func (r *ImportSessionRepository) SavePendingRow(id string, importRow models.Imp
 func (r *ImportSessionRepository) ResolveRow(
 	id string,
 	student models.Student,
-	importBatch func([]models.Student) (models.ImportBatchResult, error),
+	importBatchTx func(Querier, []models.Student) (models.ImportBatchResult, error),
 ) (models.ImportBatchResult, error) {
-	return r.resolvePendingRows([]string{id}, []models.Student{student}, false, importBatch)
+	return r.resolvePendingRows([]string{id}, []models.Student{student}, false, importBatchTx)
 }
 
 // ResolveDuplicate imports one winner and ignores all losers.
@@ -247,17 +262,17 @@ func (r *ImportSessionRepository) ResolveDuplicate(
 	winnerID string,
 	loserIDs []string,
 	student models.Student,
-	importBatch func([]models.Student) (models.ImportBatchResult, error),
+	importBatchTx func(Querier, []models.Student) (models.ImportBatchResult, error),
 ) (models.ImportBatchResult, error) {
 	ids := append([]string{winnerID}, loserIDs...)
-	return r.resolvePendingRows(ids, []models.Student{student}, true, importBatch)
+	return r.resolvePendingRows(ids, []models.Student{student}, true, importBatchTx)
 }
 
 // ResolveGradeGroup resolves all pending rows in a grade group with the chosen grade.
 func (r *ImportSessionRepository) ResolveGradeGroup(
 	sessionID, stage, groupKey, grade string,
 	normalize func(models.Student) (models.Student, error),
-	importBatch func([]models.Student) (models.ImportBatchResult, error),
+	importBatchTx func(Querier, []models.Student) (models.ImportBatchResult, error),
 ) (int, error) {
 	resolved := 0
 	tx, err := r.db.Begin()
@@ -294,7 +309,7 @@ func (r *ImportSessionRepository) ResolveGradeGroup(
 		if err != nil {
 			return 0, err
 		}
-		if _, err = importBatch([]models.Student{student}); err != nil {
+		if _, err = importBatchTx(tx, []models.Student{student}); err != nil {
 			return 0, err
 		}
 		if err = markResolved(tx, record, student); err != nil {
@@ -392,7 +407,7 @@ func (r *ImportSessionRepository) resolvePendingRows(
 	ids []string,
 	students []models.Student,
 	duplicateResolution bool,
-	importBatch func([]models.Student) (models.ImportBatchResult, error),
+	importBatchTx func(Querier, []models.Student) (models.ImportBatchResult, error),
 ) (models.ImportBatchResult, error) {
 	result := models.ImportBatchResult{}
 	if len(ids) == 0 {
@@ -445,7 +460,7 @@ func (r *ImportSessionRepository) resolvePendingRows(
 
 	if len(students) > 0 {
 		var err error
-		result, err = importBatch(students)
+		result, err = importBatchTx(tx, students)
 		if err != nil {
 			return result, err
 		}

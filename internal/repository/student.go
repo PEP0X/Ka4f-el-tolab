@@ -7,13 +7,23 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
 	"Ka4f-El-Tolab/internal/models"
+	"Ka4f-El-Tolab/internal/normalization"
 )
 
 const studentColumns = `id, family_head, full_name, national_id, gender, birth_date, governorate, phone, parent_phone, address, stage, grade, school_name, track, university_name, faculty, study_years, university_year, church_family_id, cathedral_student_id, cathedral_family_id, alexandria_student_id, alexandria_family_id, photo_path, deacon_status, notes, created_at, updated_at`
+
+// Querier is an interface satisfied by both *sql.DB and *sql.Tx.
+type Querier interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	Query(query string, args ...any) (*sql.Rows, error)
+	QueryRow(query string, args ...any) *sql.Row
+	Prepare(query string) (*sql.Stmt, error)
+}
 
 // StudentRepository handles all student persistence operations.
 type StudentRepository struct {
@@ -26,45 +36,87 @@ func NewStudentRepository(db *sql.DB) *StudentRepository {
 
 func scanStudent(scanner interface{ Scan(dest ...any) error }) (*models.Student, error) {
 	var s models.Student
-	var deaconStatus int
+	var (
+		id, familyHead, fullName, nationalID, gender, birthDate, governorate, phone, parentPhone, address sql.NullString
+		stage, grade, schoolName, track, universityName, faculty, studyYears, universityYear, churchFamilyID sql.NullString
+		cathedralStudentID, cathedralFamilyID, alexandriaStudentID, alexandriaFamilyID, photoPath, notes sql.NullString
+		deaconStatus                                                                                       sql.NullInt64
+		createdAt, updatedAt                                                                               sql.NullTime
+	)
 	err := scanner.Scan(
-		&s.ID,
-		&s.FamilyHead,
-		&s.FullName,
-		&s.NationalID,
-		&s.Gender,
-		&s.BirthDate,
-		&s.Governorate,
-		&s.Phone,
-		&s.ParentPhone,
-		&s.Address,
-		&s.Stage,
-		&s.Grade,
-		&s.SchoolName,
-		&s.Track,
-		&s.UniversityName,
-		&s.Faculty,
-		&s.StudyYears,
-		&s.UniversityYear,
-		&s.ChurchFamilyID,
-		&s.CathedralStudentID,
-		&s.CathedralFamilyID,
-		&s.AlexandriaStudentID,
-		&s.AlexandriaFamilyID,
-		&s.PhotoPath,
+		&id,
+		&familyHead,
+		&fullName,
+		&nationalID,
+		&gender,
+		&birthDate,
+		&governorate,
+		&phone,
+		&parentPhone,
+		&address,
+		&stage,
+		&grade,
+		&schoolName,
+		&track,
+		&universityName,
+		&faculty,
+		&studyYears,
+		&universityYear,
+		&churchFamilyID,
+		&cathedralStudentID,
+		&cathedralFamilyID,
+		&alexandriaStudentID,
+		&alexandriaFamilyID,
+		&photoPath,
 		&deaconStatus,
-		&s.Notes,
-		&s.CreatedAt,
-		&s.UpdatedAt,
+		&notes,
+		&createdAt,
+		&updatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
-	s.DeaconStatus = deaconStatus != 0
+	s.ID = id.String
+	s.FamilyHead = familyHead.String
+	s.FullName = fullName.String
+	s.NationalID = nationalID.String
+	s.Gender = gender.String
+	s.BirthDate = birthDate.String
+	s.Governorate = governorate.String
+	s.Phone = phone.String
+	s.ParentPhone = parentPhone.String
+	s.Address = address.String
+	s.Stage = stage.String
+	s.Grade = grade.String
+	s.SchoolName = schoolName.String
+	s.Track = track.String
+	s.UniversityName = universityName.String
+	s.Faculty = faculty.String
+	s.StudyYears = studyYears.String
+	s.UniversityYear = universityYear.String
+	s.ChurchFamilyID = churchFamilyID.String
+	s.CathedralStudentID = cathedralStudentID.String
+	s.CathedralFamilyID = cathedralFamilyID.String
+	s.AlexandriaStudentID = alexandriaStudentID.String
+	s.AlexandriaFamilyID = alexandriaFamilyID.String
+	s.PhotoPath = photoPath.String
+	s.DeaconStatus = deaconStatus.Int64 != 0
+	s.Notes = notes.String
+	if createdAt.Valid {
+		s.CreatedAt = createdAt.Time
+	}
+	if updatedAt.Valid {
+		s.UpdatedAt = updatedAt.Time
+	}
 	return &s, nil
 }
 
-// FindAll returns students filtered by stage and search query.
+type scoredStudent struct {
+	student models.Student
+	score   int
+}
+
+// FindAll returns students filtered by stage and search query using advanced Arabic normalization & relevance ranking.
 func (r *StudentRepository) FindAll(stage, search string) ([]models.Student, error) {
 	query := "SELECT " + studentColumns + " FROM students WHERE 1=1"
 	var args []any
@@ -72,11 +124,6 @@ func (r *StudentRepository) FindAll(stage, search string) ([]models.Student, err
 	if stage != "" && stage != "الكل" && stage != "All" {
 		query += " AND stage = ?"
 		args = append(args, stage)
-	}
-	if search != "" {
-		p := "%" + search + "%"
-		query += " AND (full_name LIKE ? OR national_id LIKE ? OR phone LIKE ? OR parent_phone LIKE ? OR family_head LIKE ? OR school_name LIKE ? OR church_family_id LIKE ? OR cathedral_student_id LIKE ? OR cathedral_family_id LIKE ?)"
-		args = append(args, p, p, p, p, p, p, p, p, p)
 	}
 
 	query += " ORDER BY full_name ASC"
@@ -87,19 +134,68 @@ func (r *StudentRepository) FindAll(stage, search string) ([]models.Student, err
 	}
 	defer rows.Close()
 
-	students := make([]models.Student, 0)
+	cleanSearch := normalization.NormalizeForSearch(search)
+	tokens := strings.Fields(cleanSearch)
+
+	if len(tokens) == 0 {
+		students := make([]models.Student, 0)
+		for rows.Next() {
+			s, err := scanStudent(rows)
+			if err != nil {
+				return nil, fmt.Errorf("scan student row: %w", err)
+			}
+			students = append(students, *s)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("iterate students: %w", err)
+		}
+		return students, nil
+	}
+
+	scored := make([]scoredStudent, 0)
 	for rows.Next() {
 		s, err := scanStudent(rows)
 		if err != nil {
 			return nil, fmt.Errorf("scan student row: %w", err)
 		}
-		students = append(students, *s)
+
+		matched, score := normalization.MatchTokens(
+			tokens,
+			s.FullName,
+			s.FamilyHead,
+			s.NationalID,
+			s.Phone,
+			s.ParentPhone,
+			s.SchoolName,
+			s.Grade,
+			s.Track,
+			s.ChurchFamilyID,
+			s.CathedralStudentID,
+			s.CathedralFamilyID,
+			s.AlexandriaStudentID,
+			s.AlexandriaFamilyID,
+			s.Notes,
+		)
+		if matched {
+			scored = append(scored, scoredStudent{student: *s, score: score})
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate students: %w", err)
 	}
 
-	return students, nil
+	sort.SliceStable(scored, func(i, j int) bool {
+		if scored[i].score != scored[j].score {
+			return scored[i].score > scored[j].score
+		}
+		return scored[i].student.FullName < scored[j].student.FullName
+	})
+
+	results := make([]models.Student, len(scored))
+	for i, sc := range scored {
+		results[i] = sc.student
+	}
+	return results, nil
 }
 
 // FindByID returns a single student by primary key.
@@ -128,6 +224,69 @@ func (r *StudentRepository) FindByNationalID(nid string) (*models.Student, error
 		return nil, err
 	}
 	return s, nil
+}
+
+// FindByNationalIDs loads existing students matching any of the given national IDs in batches.
+func (r *StudentRepository) FindByNationalIDs(nids []string) (map[string]*models.Student, error) {
+	result := make(map[string]*models.Student, len(nids))
+	if len(nids) == 0 {
+		return result, nil
+	}
+
+	uniqueNIDs := make([]string, 0, len(nids))
+	seen := make(map[string]struct{}, len(nids))
+	for _, id := range nids {
+		clean := strings.TrimSpace(id)
+		if clean == "" {
+			continue
+		}
+		if _, exists := seen[clean]; !exists {
+			seen[clean] = struct{}{}
+			uniqueNIDs = append(uniqueNIDs, clean)
+		}
+	}
+	if len(uniqueNIDs) == 0 {
+		return result, nil
+	}
+
+	const batchSize = 500
+	for i := 0; i < len(uniqueNIDs); i += batchSize {
+		end := i + batchSize
+		if end > len(uniqueNIDs) {
+			end = len(uniqueNIDs)
+		}
+		chunk := uniqueNIDs[i:end]
+
+		placeholders := strings.Repeat("?,", len(chunk))
+		placeholders = placeholders[:len(placeholders)-1]
+		query := "SELECT " + studentColumns + " FROM students WHERE national_id IN (" + placeholders + ")"
+
+		args := make([]any, len(chunk))
+		for ci, c := range chunk {
+			args[ci] = c
+		}
+
+		rows, err := r.db.Query(query, args...)
+		if err != nil {
+			return nil, fmt.Errorf("batch query students by national_id: %w", err)
+		}
+
+		for rows.Next() {
+			s, err := scanStudent(rows)
+			if err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("scan batch student row: %w", err)
+			}
+			result[s.NationalID] = s
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("iterate batch students: %w", err)
+		}
+		rows.Close()
+	}
+
+	return result, nil
 }
 
 // Save creates or updates a student record (upsert by primary key).
@@ -241,7 +400,27 @@ func (r *StudentRepository) ImportBatch(students []models.Student) (models.Impor
 	}
 	defer tx.Rollback()
 
-	findStmt, err := tx.Prepare("SELECT id, created_at FROM students WHERE national_id = ? LIMIT 1")
+	res, err := r.ImportBatchTx(tx, students)
+	if err != nil {
+		return res, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		slog.Error("import batch commit failed", "inserted", res.Inserted, "updated", res.Updated, "error", err)
+		return res, fmt.Errorf("commit batch: %w", err)
+	}
+
+	return res, nil
+}
+
+// ImportBatchTx executes batch insertion/update within an existing transaction or query context.
+func (r *StudentRepository) ImportBatchTx(q Querier, students []models.Student) (models.ImportBatchResult, error) {
+	result := models.ImportBatchResult{}
+	if len(students) == 0 {
+		return result, nil
+	}
+
+	findStmt, err := q.Prepare("SELECT id, created_at FROM students WHERE national_id = ? LIMIT 1")
 	if err != nil {
 		return result, fmt.Errorf("prepare find stmt: %w", err)
 	}
@@ -282,7 +461,7 @@ func (r *StudentRepository) ImportBatch(students []models.Student) (models.Impor
 		notes = excluded.notes,
 		updated_at = excluded.updated_at`
 
-	upsertStmt, err := tx.Prepare(upsertQuery)
+	upsertStmt, err := q.Prepare(upsertQuery)
 	if err != nil {
 		return result, fmt.Errorf("prepare upsert stmt: %w", err)
 	}
@@ -347,11 +526,6 @@ func (r *StudentRepository) ImportBatch(students []models.Student) (models.Impor
 			return result, fmt.Errorf("insert student %s: %w", candidate.NationalID, err)
 		}
 		result.Inserted++
-	}
-
-	if err := tx.Commit(); err != nil {
-		slog.Error("import batch commit failed", "inserted", result.Inserted, "updated", result.Updated, "error", err)
-		return result, fmt.Errorf("commit batch: %w", err)
 	}
 
 	return result, nil

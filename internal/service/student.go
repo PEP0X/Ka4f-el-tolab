@@ -159,12 +159,28 @@ func (s *StudentService) ImportBatch(students []models.Student) (models.ImportBa
 	return result, nil
 }
 
-// GetChurchName returns the configured church name, or default if empty.
+// ImportBatchTx imports a batch of students within an existing transaction context.
+func (s *StudentService) ImportBatchTx(q repository.Querier, students []models.Student) (models.ImportBatchResult, error) {
+	result, err := s.repo.ImportBatchTx(q, students)
+	if err != nil {
+		return result, err
+	}
+	s.invalidateCache()
+	return result, nil
+}
+
+// FindByNationalIDs batch-fetches existing students by national IDs in a single query.
+func (s *StudentService) FindByNationalIDs(nids []string) (map[string]*models.Student, error) {
+	return s.repo.FindByNationalIDs(nids)
+}
+
+// GetChurchName returns the configured church name from database settings.
 func (s *StudentService) GetChurchName() (string, error) {
 	s.mu.RLock()
 	if s.churchCache != "" {
-		defer s.mu.RUnlock()
-		return s.churchCache, nil
+		cached := s.churchCache
+		s.mu.RUnlock()
+		return cached, nil
 	}
 	s.mu.RUnlock()
 
@@ -172,22 +188,17 @@ func (s *StudentService) GetChurchName() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if name == "" {
-		name = "كنيسة مارجرجس"
-	}
 
+	clean := strings.TrimSpace(name)
 	s.mu.Lock()
-	s.churchCache = name
+	s.churchCache = clean
 	s.mu.Unlock()
 
-	return name, nil
+	return clean, nil
 }
 
 // SetChurchName sets the configured church name.
 func (s *StudentService) SetChurchName(name string) error {
-	if strings.TrimSpace(name) == "" {
-		name = "كنيسة مارجرجس"
-	}
 	cleanName := strings.TrimSpace(name)
 	if err := s.repo.SetChurchSetting("church_name", cleanName); err != nil {
 		return err

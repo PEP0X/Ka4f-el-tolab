@@ -45,11 +45,11 @@ import { UpdatesTab } from './correction/UpdatesTab';
 import { ShortcutsModal } from '../components/correction/ShortcutsModal';
 import { Toast } from '../components/common/Toast';
 
-const TABS: { key: TabKey; label: string; color: string; bg: string }[] = [
-  { key: 'review', label: 'تحتاج مراجعة', color: '#d97706', bg: '#fef3c7' },
-  { key: 'errors', label: 'أخطاء', color: '#dc2626', bg: '#fee2e2' },
-  { key: 'duplicates', label: 'مكررات', color: '#2563eb', bg: '#dbeafe' },
-  { key: 'updates', label: 'مرشحة للتحديث', color: '#7c3aed', bg: '#f3e8ff' },
+const TABS: { key: TabKey; label: string; description: string; color: string; bg: string }[] = [
+  { key: 'review', label: 'تحتاج مراجعة', description: 'تأكيد الصفوف والمراحل وتنبيهات العمر مع المرحلة', color: '#d97706', bg: '#fef3c7' },
+  { key: 'errors', label: 'أخطاء', description: 'تصحيح أرقام الهوية القومية غير المكتملة أو غير المطابقة', color: '#dc2626', bg: '#fee2e2' },
+  { key: 'duplicates', label: 'مكررات بالملف', description: 'دمج أو فصل السجلات المكررة داخل الملف', color: '#2563eb', bg: '#dbeafe' },
+  { key: 'updates', label: 'مرشحة للتحديث', description: 'مقارنة وتحديث بيانات السجلات المسجلة مسبقاً', color: '#7c3aed', bg: '#f3e8ff' },
 ];
 
 const STAGE_FILTERS = ['الكل', 'حضانات', 'ابتدائي', 'إعدادي', 'ثانوي', 'جامعة'];
@@ -410,21 +410,23 @@ export const CorrectionWorkspace: React.FC = () => {
                 key={t.key}
                 value={t.key}
                 label={
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <span>{t.label}</span>
-                    <Chip
-                      label={tabCounts[t.key]}
-                      size="small"
-                      sx={{
-                        height: 22,
-                        fontSize: '0.74rem',
-                        fontWeight: 800,
-                        bgcolor: activeTab === t.key ? t.color : t.bg,
-                        color: activeTab === t.key ? '#fff' : t.color,
-                        transition: 'all 150ms ease',
-                      }}
-                    />
-                  </Box>
+                  <Tooltip title={t.description} arrow placement="top">
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <span>{t.label}</span>
+                      <Chip
+                        label={tabCounts[t.key]}
+                        size="small"
+                        sx={{
+                          height: 22,
+                          fontSize: '0.74rem',
+                          fontWeight: 800,
+                          bgcolor: activeTab === t.key ? t.color : t.bg,
+                          color: activeTab === t.key ? '#fff' : t.color,
+                          transition: 'all 150ms ease',
+                        }}
+                      />
+                    </Box>
+                  </Tooltip>
                 }
               />
             ))}

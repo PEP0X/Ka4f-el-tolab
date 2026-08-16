@@ -83,9 +83,11 @@ import {
   Layers,
   Eye,
   EyeOff,
-  Filter,
   ShieldCheck,
   Fingerprint,
+  CheckCircle2,
+  XCircle,
+  FileCheck,
 } from 'lucide-react';
 import { useStudentStore } from '../store/useStudentStore';
 import { useCorrectionStore } from '../store/useCorrectionStore';
@@ -94,6 +96,7 @@ import '../types/wails';
 import { Toast } from '../components/common/Toast';
 import { NIDCheckerModal } from '../components/NIDCheckerModal';
 import { StudentDetailsModal } from '../components/StudentDetailsModal';
+import { filterAndRankStudents, matchQueryTokens } from '../lib/normalization/arabic';
 
 const stages: StageType[] = ['حضانات (KG)', 'ابتدائي', 'إعدادي', 'ثانوي', 'جامعة'];
 
@@ -131,7 +134,7 @@ const schoolGrades: Record<string, string[]> = {
   ],
 };
 
-const studyYearOptions = ['سنتان', '3 سنوات', '4 سنوات (معظم الكليات)', '5 سنوات', '6 سنوات'];
+const studyYearOptions = ['سنتان (معاهد)', '3 سنوات', '4 سنوات (معظم الكليات)', '5 سنوات (هندسة وصيدلة)', '6 سنوات', '7 سنوات (طب بشري)'];
 
 const columnHelper = createColumnHelper<Student>();
 
@@ -177,7 +180,7 @@ export const Dashboard: React.FC = () => {
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   const [nidCheckerOpen, setNidCheckerOpen] = useState(false);
   // Church Name flow
-  const [churchName, setChurchName] = useState<string>(() => localStorage.getItem('churchName') || 'كنيسة مارجرجس');
+  const [churchName, setChurchName] = useState<string>(() => localStorage.getItem('churchName') || '');
   const [churchModalOpen, setChurchModalOpen] = useState(false);
   const [churchInputName, setChurchInputName] = useState('');
   const [isSavingChurch, setIsSavingChurch] = useState(false);
@@ -190,8 +193,14 @@ export const Dashboard: React.FC = () => {
   const [importRows, setImportRows] = useState<ImportRow[]>([]);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importStage, setImportStage] = useState('ابتدائي');
+  const [previewPageIndex, setPreviewPageIndex] = useState(0);
+  const [previewPageSize, setPreviewPageSize] = useState(25);
+  const [previewStatusFilter, setPreviewStatusFilter] = useState<'all' | 'ready' | 'review' | 'error' | 'duplicate' | 'update'>('all');
+  const [previewSearch, setPreviewSearch] = useState('');
   const [importing, setImporting] = useState(false);
   const [committing, setCommitting] = useState(false);
+  // Upcoming feature notice modal
+  const [upcomingFeatureOpen, setUpcomingFeatureOpen] = useState(false);
   // After the preview is closed, we may show the "review now / later" prompt.
   const [pendingPrompt, setPendingPrompt] = useState<{
     open: boolean;
@@ -231,9 +240,23 @@ export const Dashboard: React.FC = () => {
         if (app?.GetChurchName) {
           const res = await app.GetChurchName();
           if (res && res.trim() !== '') {
-            setChurchName(res);
-            localStorage.setItem('churchName', res);
+            setChurchName(res.trim());
+            localStorage.setItem('churchName', res.trim());
           } else {
+            const local = localStorage.getItem('churchName');
+            if (local && local.trim() !== '') {
+              setChurchName(local.trim());
+              await app.SetChurchName(local.trim());
+            } else {
+              setChurchName('');
+              setChurchInputName('');
+              setChurchModalOpen(true);
+            }
+          }
+        } else {
+          const local = localStorage.getItem('churchName');
+          if (!local || local.trim() === '') {
+            setChurchName('');
             setChurchInputName('');
             setChurchModalOpen(true);
           }
@@ -411,6 +434,9 @@ export const Dashboard: React.FC = () => {
       setImportPreview(preview);
       setImportRows(preview.rows || []);
       setImportStage(preview.sheets.find((sheet) => sheet.stage)?.stage || 'ابتدائي');
+      setPreviewPageIndex(0);
+      setPreviewStatusFilter('all');
+      setPreviewSearch('');
       setImportDialogOpen(true);
     } catch (error) {
       setToastSeverity('error');
@@ -700,14 +726,18 @@ export const Dashboard: React.FC = () => {
   }, [activeStage]);
 
   const filteredStudents = useMemo(() => {
-    return students.filter((s) => {
+    let result = students.filter((s) => {
       if (genderFilter !== 'all' && s.gender !== genderFilter) return false;
       if (gradeFilter !== 'all') {
         if (s.grade !== gradeFilter && s.track !== gradeFilter) return false;
       }
       return true;
     });
-  }, [students, genderFilter, gradeFilter]);
+    if (searchQuery && searchQuery.trim()) {
+      result = filterAndRankStudents(result, searchQuery);
+    }
+    return result;
+  }, [students, genderFilter, gradeFilter, searchQuery]);
 
   const columnLabels: Record<string, string> = {
     fullName: 'اسم الطالب الرباعي',
@@ -1066,10 +1096,10 @@ export const Dashboard: React.FC = () => {
             </Box>
             <Box sx={{ textAlign: 'start', minWidth: 0, flexGrow: 1 }}>
               <Typography variant="subtitle1" fontWeight={800} color="#0f172a" sx={{ lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {churchName}
+                {churchName || 'تعيين اسم الكنيسة'}
               </Typography>
               <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                خدمة أسر إخوة الرب • تعديل
+                {churchName ? 'خدمة أسر إخوة الرب • تعديل' : 'اضغط لإدخال اسم الكنيسة'}
               </Typography>
             </Box>
           </Box>
@@ -1358,6 +1388,7 @@ export const Dashboard: React.FC = () => {
             <Button
               variant="outlined"
               startIcon={<RefreshCw size={16} color="#475569" />}
+              onClick={() => setUpcomingFeatureOpen(true)}
               sx={{
                 py: 1,
                 px: 2,
@@ -2119,104 +2150,544 @@ export const Dashboard: React.FC = () => {
       {/* Excel import preview: all parsing/validation has already run in Go.
           The new flow auto-commits clean rows and stores the rest as a pending
           batch that can be reviewed from the workspace at any time. */}
+      {/* Excel Import Preview Dialog */}
       <Dialog
         open={importDialogOpen}
         onClose={() => !committing && !importing && handleCancelImport()}
         maxWidth="xl"
         fullWidth
         dir="rtl"
-        PaperProps={{ sx: { borderRadius: 3, minHeight: '70vh' } }}
+        PaperProps={{
+          sx: {
+            borderRadius: 3.5,
+            minHeight: '75vh',
+            boxShadow: '0 25px 60px rgba(15, 23, 42, 0.25)',
+            border: '1px solid #e2e8f0',
+            overflow: 'hidden',
+          },
+        }}
       >
-        <DialogTitle sx={{ pb: 1, borderBottom: '1px solid #e2e8f0' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Box>
-              <Typography variant="h6" fontWeight={800} color="#0f172a">معاينة استيراد بيانات الطلاب</Typography>
-              <Typography variant="caption" color="text.secondary">
-                الصفوف السليمة ستُستورد تلقائياً فور المتابعة، والباقي سيُحفظ كدفعة معلقة لمراجعتها لاحقاً.
-              </Typography>
+        {/* HEADER */}
+        <DialogTitle
+          sx={{
+            py: 2,
+            px: 3,
+            borderBottom: '1px solid #e2e8f0',
+            background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box
+                sx={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 2.5,
+                  bgcolor: '#eff6ff',
+                  color: '#2563eb',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: '1px solid #dbeafe',
+                }}
+              >
+                <FileSpreadsheet size={24} />
+              </Box>
+              <Box sx={{ textAlign: 'start' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="h6" fontWeight={900} color="#0f172a">
+                    معاينة وتدقيق استيراد بيانات الطلاب
+                  </Typography>
+                  {importRows.length > 0 && (
+                    <Chip
+                      label={`${importRows.length} طالب بالملف`}
+                      size="small"
+                      sx={{ bgcolor: '#0f172a', color: '#fff', fontWeight: 800, height: 22, fontSize: '0.74rem' }}
+                    />
+                  )}
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.2 }}>
+                  الصفوف السليمة تُستورد فوراً لقاعدة البيانات، وأي صفوف تحتوي على ملاحظات تُحفظ في مركز المراجعة والتصحيح.
+                </Typography>
+              </Box>
             </Box>
-            <IconButton disabled={committing || importing} onClick={handleCancelImport}><X size={18} /></IconButton>
+            <IconButton
+              disabled={committing || importing}
+              onClick={handleCancelImport}
+              sx={{ border: '1px solid #e2e8f0', bgcolor: '#fff', '&:hover': { bgcolor: '#f1f5f9' } }}
+            >
+              <X size={18} />
+            </IconButton>
           </Box>
         </DialogTitle>
 
-        <DialogContent sx={{ bgcolor: '#f8fafc', p: 2.5 }}>
+        <DialogContent sx={{ bgcolor: '#f8fafc', p: 3 }}>
           {importPreview && (
             <>
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' }, gap: 1.2, mb: 2 }}>
+              {/* INTERACTIVE KPI STATUS CARDS */}
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(6, 1fr)' },
+                  gap: 1.5,
+                  mb: 2.5,
+                }}
+              >
                 {[
-                  ['سليمة', importPreview.ready, '#16a34a', 'ستُستورد تلقائياً'],
-                  ['تحتاج مراجعة', importPreview.review, '#d97706', 'دفعة معلقة للمراجعة'],
-                  ['أخطاء', importPreview.errors, '#dc2626', 'دفعة معلقة للتصحيح'],
-                  ['مكررات بالملف', importPreview.duplicate, '#2563eb', 'دفعة معلقة للدمج'],
-                  ['مرشحة للتحديث', importPreview.updates, '#7c3aed', 'دفعة معلقة للتأكيد'],
-                ].map(([label, count, color, sub]) => (
-                  <Paper key={String(label)} elevation={0} sx={{ p: 1.2, border: `1px solid ${color}22`, borderRadius: 2, textAlign: 'center', bgcolor: '#fff' }}>
-                    <Typography variant="h6" fontWeight={800} sx={{ color }}>{count}</Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{label}</Typography>
-                    <Typography variant="caption" sx={{ color, fontSize: '0.68rem' }}>{sub}</Typography>
-                  </Paper>
-                ))}
+                  { key: 'all', label: 'كافة الصفوف', count: importRows.length, color: '#0f172a', bg: '#f1f5f9', sub: 'إجمالي السجلات بالملف', icon: <Layers size={17} /> },
+                  { key: 'ready', label: 'سليمة', count: importPreview.ready, color: '#16a34a', bg: '#f0fdf4', sub: 'استيراد فوري مباشر', icon: <CheckCircle2 size={17} /> },
+                  { key: 'review', label: 'تحتاج مراجعة', count: importPreview.review, color: '#d97706', bg: '#fffbeb', sub: 'دفعة معلقة للمراجعة', icon: <AlertTriangle size={17} /> },
+                  { key: 'error', label: 'أخطاء', count: importPreview.errors, color: '#dc2626', bg: '#fef2f2', sub: 'دفعة معلقة للتصحيح', icon: <XCircle size={17} /> },
+                  { key: 'duplicate', label: 'مكررات بالملف', count: importPreview.duplicate, color: '#2563eb', bg: '#eff6ff', sub: 'دفعة معلقة للدمج', icon: <Copy size={17} /> },
+                  { key: 'update', label: 'مرشحة للتحديث', count: importPreview.updates, color: '#7c3aed', bg: '#f5f3ff', sub: 'تحديث بيانات سابقة', icon: <RefreshCw size={17} /> },
+                ].map((kpi) => {
+                  const isSelected = previewStatusFilter === kpi.key;
+                  return (
+                    <Paper
+                      key={kpi.key}
+                      elevation={0}
+                      onClick={() => {
+                        setPreviewStatusFilter(kpi.key as any);
+                        setPreviewPageIndex(0);
+                      }}
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2.5,
+                        border: '2px solid',
+                        borderColor: isSelected ? kpi.color : '#e2e8f0',
+                        bgcolor: isSelected ? kpi.bg : '#ffffff',
+                        textAlign: 'start',
+                        cursor: 'pointer',
+                        transition: 'all 150ms ease',
+                        boxShadow: isSelected ? `0 4px 14px ${kpi.color}22` : '0 1px 3px rgba(0,0,0,0.03)',
+                        '&:hover': {
+                          borderColor: kpi.color,
+                          transform: 'translateY(-2px)',
+                          boxShadow: `0 6px 18px ${kpi.color}22`,
+                        },
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Typography variant="caption" fontWeight={800} color={kpi.color}>
+                          {kpi.label}
+                        </Typography>
+                        <Box sx={{ color: kpi.color }}>{kpi.icon}</Box>
+                      </Box>
+                      <Typography variant="h5" fontWeight={900} sx={{ color: kpi.color, my: 0.2 }}>
+                        {kpi.count}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.7rem', display: 'block' }}>
+                        {kpi.sub}
+                      </Typography>
+                    </Paper>
+                  );
+                })}
               </Box>
 
-              {importPreview.sheets.some((sheet) => sheet.rowsFound === 0) && (
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                  {importPreview.sheets.filter((sheet) => sheet.rowsFound === 0).map((sheet) => `${sheet.name}: 0 صف`).join(' • ')}
-                </Typography>
-              )}
+              {/* TOOLBAR: TABS + SEARCH + STAGE SELECTOR */}
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 1.5,
+                  mb: 2,
+                  borderRadius: 2.5,
+                  border: '1px solid #e2e8f0',
+                  bgcolor: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 2,
+                }}
+              >
+                {/* STAGE TABS */}
+                <Tabs
+                  value={importStage}
+                  onChange={(_, value) => {
+                    setImportStage(value);
+                    setPreviewPageIndex(0);
+                  }}
+                  sx={{
+                    '& .MuiTab-root': { fontWeight: 800, minHeight: 40, fontSize: '0.85rem' },
+                    '& .MuiTabs-indicator': { height: 3, borderRadius: 2 },
+                  }}
+                >
+                  {importPreview.sheets.filter((sheet) => sheet.stage).map((sheet) => (
+                    <Tab
+                      key={sheet.stage}
+                      value={sheet.stage}
+                      label={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                          <span>{sheet.stage}</span>
+                          <Chip
+                            label={sheet.rowsFound}
+                            size="small"
+                            sx={{
+                              height: 20,
+                              fontSize: '0.72rem',
+                              fontWeight: 800,
+                              bgcolor: importStage === sheet.stage ? '#2563eb' : '#f1f5f9',
+                              color: importStage === sheet.stage ? '#fff' : '#475569',
+                            }}
+                          />
+                        </Box>
+                      }
+                    />
+                  ))}
+                </Tabs>
 
-              <Tabs value={importStage} onChange={(_, value) => setImportStage(value)} sx={{ bgcolor: '#fff', borderRadius: 2, border: '1px solid #e2e8f0', mb: 1.5 }}>
-                {importPreview.sheets.filter((sheet) => sheet.stage).map((sheet) => (
-                  <Tab key={sheet.stage} value={sheet.stage} label={`${sheet.stage} (${sheet.rowsFound})`} />
-                ))}
-              </Tabs>
-
-              <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 2, overflow: 'auto', maxHeight: 440 }}>
-                <table style={{ width: '100%', minWidth: 980, borderCollapse: 'collapse', textAlign: 'right' }}>
-                  <thead><tr style={{ background: '#f1f5f9' }}>
-                    {['المصدر', 'الاسم', 'الرقم القومي', 'الصف / المرحلة', 'الحالة والملاحظات'].map((header) => <th key={header} style={{ padding: '12px 10px', fontSize: '0.78rem' }}>{header}</th>)}
-                  </tr></thead>
-                  <tbody>
-                    {importRows.filter((row) => row.student.stage === importStage).map((row) => {
-                      const status = row.status === 'ready' || row.status === 'update'
-                        ? { label: row.status === 'update' ? 'تحديث' : 'سليم', color: '#16a34a', bg: '#f0fdf4' }
-                        : row.status === 'review' ? { label: 'مراجعة', color: '#d97706', bg: '#fffbeb' }
-                        : row.status === 'duplicate' ? { label: 'مكرر', color: '#2563eb', bg: '#eff6ff' }
-                        : { label: 'خطأ', color: '#dc2626', bg: '#fef2f2' };
-                      return <tr key={row.id} style={{ borderTop: '1px solid #e2e8f0', background: status.bg }}>
-                        <td style={{ padding: 8, whiteSpace: 'nowrap' }}><Typography variant="caption">{row.sheet}<br />صف {row.rowNumber}</Typography></td>
-                        <td style={{ padding: 8 }}><TextField size="small" value={row.student.fullName || ''} onChange={(event) => updateImportStudent(row.id, 'fullName', event.target.value)} /></td>
-                        <td style={{ padding: 8 }}><TextField size="small" value={row.student.nationalId || ''} onChange={(event) => updateImportStudent(row.id, 'nationalId', event.target.value)} inputProps={{ style: { fontFamily: 'monospace' } }} /></td>
-                        <td style={{ padding: 8 }}><TextField size="small" value={row.student.grade || ''} onChange={(event) => updateImportStudent(row.id, 'grade', event.target.value)} helperText={row.gradeSuggestion || undefined} /></td>
-                        <td style={{ padding: 8, minWidth: 220 }}>
-                          <Chip label={status.label} size="small" sx={{ bgcolor: status.bg, color: status.color, border: `1px solid ${status.color}44`, fontWeight: 700, mb: 0.5 }} />
-                          {row.existing && <Typography variant="caption" display="block" color="#7c3aed">تحديث سجل موجود: {row.existing.grade || 'بدون صف'} ← {row.student.grade || 'بدون صف'}</Typography>}
-                          {row.issues.map((issue, index) => <Typography key={`${row.id}-${index}`} variant="caption" display="block" sx={{ color: issue.kind === 'error' ? '#dc2626' : '#a16207' }}>{issue.message}</Typography>)}
-                        </td>
-                      </tr>;
-                    })}
-                  </tbody>
-                </table>
+                {/* SEARCH FILTER */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  <TextField
+                    size="small"
+                    placeholder="بحث فوري بالاسم أو الرقم القومي..."
+                    value={previewSearch}
+                    onChange={(e) => {
+                      setPreviewSearch(e.target.value);
+                      setPreviewPageIndex(0);
+                    }}
+                    sx={{ minWidth: 280, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <Search size={15} color="#94a3b8" />
+                        </InputAdornment>
+                      ),
+                      endAdornment: previewSearch ? (
+                        <InputAdornment position="end">
+                          <IconButton size="small" onClick={() => setPreviewSearch('')}>
+                            <X size={13} />
+                          </IconButton>
+                        </InputAdornment>
+                      ) : null,
+                    }}
+                  />
+                </Box>
               </Paper>
+
+              {/* FILTERED & PAGINATED PREVIEW ROWS */}
+              {(() => {
+                let stageRows = importRows.filter((row) => row.student.stage === importStage);
+
+                if (previewStatusFilter !== 'all') {
+                  if (previewStatusFilter === 'ready') {
+                    stageRows = stageRows.filter((r) => r.status === 'ready' || r.status === 'update');
+                  } else {
+                    stageRows = stageRows.filter((r) => r.status === previewStatusFilter);
+                  }
+                }
+
+                if (previewSearch.trim()) {
+                  stageRows = stageRows.filter((r) =>
+                    matchQueryTokens(previewSearch, [
+                      r.student.fullName,
+                      r.student.nationalId,
+                      r.student.grade,
+                      r.student.phone,
+                      r.rawGrade,
+                      r.gradeSuggestion,
+                    ]).matched
+                  );
+                }
+
+                const totalPages = Math.ceil(stageRows.length / previewPageSize) || 1;
+                const curPage = Math.min(previewPageIndex, totalPages - 1);
+                const paginated = stageRows.slice(curPage * previewPageSize, (curPage + 1) * previewPageSize);
+
+                if (stageRows.length === 0) {
+                  return (
+                    <Paper
+                      elevation={0}
+                      sx={{
+                        p: 6,
+                        textAlign: 'center',
+                        borderRadius: 3,
+                        border: '1px dashed #cbd5e1',
+                        bgcolor: '#fff',
+                      }}
+                    >
+                      <FolderPlus size={36} color="#94a3b8" style={{ margin: '0 auto 12px' }} />
+                      <Typography variant="subtitle1" fontWeight={800} color="#334155">
+                        لا توجد صفوف تطابق الفلاتر المحددة
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        جرب إلغاء البحث أو اختيار فلتر حالة آخر.
+                      </Typography>
+                      {(previewStatusFilter !== 'all' || previewSearch) && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => {
+                            setPreviewStatusFilter('all');
+                            setPreviewSearch('');
+                          }}
+                          sx={{ mt: 2, borderRadius: 2 }}
+                        >
+                          إعادة ضبط الفلاتر
+                        </Button>
+                      )}
+                    </Paper>
+                  );
+                }
+
+                return (
+                  <>
+                    <Paper
+                      elevation={0}
+                      sx={{
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 3,
+                        overflow: 'hidden',
+                        bgcolor: '#fff',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+                      }}
+                    >
+                      <Box sx={{ overflowX: 'auto', maxHeight: 460 }}>
+                        <table style={{ width: '100%', minWidth: 1040, borderCollapse: 'collapse', textAlign: 'right' }}>
+                          <thead>
+                            <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                              {['المصدر', 'اسم الطالب', 'الرقم القومي والبيانات المستخرجة', 'المرحلة والصف', 'حالة السجل والملاحظات'].map((header) => (
+                                <th
+                                  key={header}
+                                  style={{
+                                    padding: '13px 14px',
+                                    fontSize: '0.82rem',
+                                    fontWeight: 800,
+                                    color: '#475569',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {header}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {paginated.map((row) => {
+                              const status =
+                                row.status === 'ready' || row.status === 'update'
+                                  ? { label: row.status === 'update' ? 'تحديث' : 'سليم', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' }
+                                  : row.status === 'review'
+                                  ? { label: 'مراجعة', color: '#d97706', bg: '#fffbeb', border: '#fde68a' }
+                                  : row.status === 'duplicate'
+                                  ? { label: 'مكرر', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' }
+                                  : { label: 'خطأ', color: '#dc2626', bg: '#fef2f2', border: '#fecaca' };
+
+                              return (
+                                <tr
+                                  key={row.id}
+                                  style={{
+                                    borderBottom: '1px solid #f1f5f9',
+                                    background: '#ffffff',
+                                    transition: 'background-color 120ms ease',
+                                  }}
+                                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f8fafc')}
+                                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#ffffff')}
+                                >
+                                  <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                                    <Typography variant="caption" fontWeight={700} color="#64748b" display="block">
+                                      {row.sheet}
+                                    </Typography>
+                                    <Chip
+                                      label={`صف ${row.rowNumber}`}
+                                      size="small"
+                                      sx={{ height: 20, fontSize: '0.68rem', fontWeight: 700, bgcolor: '#f1f5f9' }}
+                                    />
+                                  </td>
+                                  <td style={{ padding: '10px 14px', minWidth: 200 }}>
+                                    <TextField
+                                      size="small"
+                                      fullWidth
+                                      value={row.student.fullName || ''}
+                                      onChange={(event) => updateImportStudent(row.id, 'fullName', event.target.value)}
+                                      sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#fff', borderRadius: 1.5 } }}
+                                    />
+                                  </td>
+                                  <td style={{ padding: '10px 14px', minWidth: 200 }}>
+                                    <TextField
+                                      size="small"
+                                      fullWidth
+                                      value={row.student.nationalId || ''}
+                                      onChange={(event) => updateImportStudent(row.id, 'nationalId', event.target.value)}
+                                      inputProps={{ style: { fontFamily: 'monospace', direction: 'ltr', fontWeight: 700 } }}
+                                      sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#fff', borderRadius: 1.5 } }}
+                                    />
+                                    {row.student.birthDate && (
+                                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.4, fontSize: '0.7rem' }}>
+                                        {row.student.birthDate} • {row.student.gender || '—'}
+                                      </Typography>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '10px 14px', minWidth: 180 }}>
+                                    <TextField
+                                      size="small"
+                                      fullWidth
+                                      value={row.student.grade || ''}
+                                      onChange={(event) => updateImportStudent(row.id, 'grade', event.target.value)}
+                                      sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#fff', borderRadius: 1.5 } }}
+                                    />
+                                    {row.gradeSuggestion && row.gradeSuggestion !== row.student.grade && (
+                                      <Typography variant="caption" sx={{ display: 'block', color: '#15803d', fontWeight: 700, mt: 0.3, fontSize: '0.7rem' }}>
+                                        المقترح: {row.gradeSuggestion}
+                                      </Typography>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '10px 14px', minWidth: 240 }}>
+                                    <Chip
+                                      label={status.label}
+                                      size="small"
+                                      sx={{
+                                        bgcolor: status.bg,
+                                        color: status.color,
+                                        border: `1px solid ${status.border}`,
+                                        fontWeight: 800,
+                                        mb: 0.5,
+                                      }}
+                                    />
+                                    {row.existing && (
+                                      <Typography variant="caption" display="block" color="#7c3aed" fontWeight={700}>
+                                        🔄 تحديث سجل موجود: {row.existing.grade || 'بدون صف'} ← {row.student.grade || 'بدون صف'}
+                                      </Typography>
+                                    )}
+                                    {row.issues.map((issue, index) => (
+                                      <Typography
+                                        key={`${row.id}-${index}`}
+                                        variant="caption"
+                                        display="block"
+                                        sx={{
+                                          color: issue.kind === 'error' ? '#dc2626' : '#b45309',
+                                          fontWeight: 600,
+                                          fontSize: '0.74rem',
+                                          mt: 0.2,
+                                        }}
+                                      >
+                                        • {issue.message}
+                                      </Typography>
+                                    ))}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </Box>
+                    </Paper>
+
+                    {/* PAGINATION & ROWS COUNTER */}
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        mt: 2,
+                        px: 1,
+                        gap: 2,
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                          عرض {curPage * previewPageSize + 1} - {Math.min((curPage + 1) * previewPageSize, stageRows.length)} من إجمالي {stageRows.length} صف
+                        </Typography>
+                        <FormControl size="small" sx={{ minWidth: 100 }}>
+                          <Select
+                            value={previewPageSize}
+                            onChange={(e) => {
+                              setPreviewPageSize(Number(e.target.value));
+                              setPreviewPageIndex(0);
+                            }}
+                            sx={{ height: 28, fontSize: '0.75rem', bgcolor: '#fff', borderRadius: 1.5 }}
+                          >
+                            <MenuItem value={25}>25 صف</MenuItem>
+                            <MenuItem value={50}>50 صف</MenuItem>
+                            <MenuItem value={100}>100 صف</MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Box>
+
+                      {totalPages > 1 && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            disabled={curPage === 0}
+                            onClick={() => setPreviewPageIndex((p) => Math.max(0, p - 1))}
+                            sx={{ borderRadius: 2, fontSize: '0.8rem', bgcolor: '#fff' }}
+                          >
+                            السابق
+                          </Button>
+                          <Typography variant="caption" fontWeight={800} sx={{ px: 1 }}>
+                            صفحة {curPage + 1} من {totalPages}
+                          </Typography>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            disabled={curPage >= totalPages - 1}
+                            onClick={() => setPreviewPageIndex((p) => Math.min(totalPages - 1, p + 1))}
+                            sx={{ borderRadius: 2, fontSize: '0.8rem', bgcolor: '#fff' }}
+                          >
+                            التالي
+                          </Button>
+                        </Box>
+                      )}
+                    </Box>
+                  </>
+                );
+              })()}
             </>
           )}
         </DialogContent>
-        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid #e2e8f0' }}>
-          <Box sx={{ flexGrow: 1 }} />
+
+        {/* FOOTER ACTIONS */}
+        <DialogActions
+          sx={{
+            px: 3,
+            py: 2,
+            borderTop: '1px solid #e2e8f0',
+            bgcolor: '#ffffff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
           <Button
             disabled={committing || importing}
             onClick={handleExportSkippedFromPreview}
+            startIcon={<Download size={15} />}
+            sx={{ fontWeight: 700, borderRadius: 2 }}
           >
             تصدير الصفوف المتبقية
           </Button>
-          <Button disabled={committing || importing} onClick={handleCancelImport}>إلغاء</Button>
-          <Button
-            variant="contained"
-            color="success"
-            disabled={committing || importing || !importRows.length}
-            onClick={handleConfirmExcelImport}
-          >
-            {committing ? 'جارٍ الحفظ...' : 'متابعة الاستيراد'}
-          </Button>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Button
+              disabled={committing || importing}
+              onClick={handleCancelImport}
+              sx={{ fontWeight: 700, borderRadius: 2 }}
+            >
+              إلغاء
+            </Button>
+            <Button
+              variant="contained"
+              color="success"
+              disabled={committing || importing || !importRows.length}
+              onClick={handleConfirmExcelImport}
+              startIcon={committing ? <CircularProgress size={16} color="inherit" /> : <FileCheck size={17} />}
+              sx={{
+                fontWeight: 900,
+                fontSize: '0.95rem',
+                px: 3.5,
+                py: 1,
+                borderRadius: 2.5,
+                boxShadow: '0 4px 14px rgba(22, 163, 74, 0.3)',
+                background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+              }}
+            >
+              {committing
+                ? 'جارٍ الحفظ والاعتماد...'
+                : `متابعة الاستيراد (استيراد ${importPreview?.ready || 0} طالب سليم)`}
+            </Button>
+          </Box>
         </DialogActions>
       </Dialog>
 
@@ -3151,54 +3622,168 @@ export const Dashboard: React.FC = () => {
       {/* Church Name Setup / Edit Dialog */}
       <Dialog
         open={churchModalOpen}
-        onClose={() => setChurchModalOpen(false)}
-        maxWidth="xs"
+        onClose={() => {
+          if (churchName) setChurchModalOpen(false);
+        }}
+        disableEscapeKeyDown={!churchName}
+        maxWidth="sm"
         fullWidth
+        dir="rtl"
         PaperProps={{
-          sx: { borderRadius: 3, p: 1 },
+          sx: {
+            borderRadius: 3.5,
+            p: 2,
+            boxShadow: '0 20px 50px rgba(15, 23, 42, 0.25)',
+            border: '1px solid #e2e8f0',
+          },
         }}
       >
-        <DialogTitle sx={{ textAlign: 'start', display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Church size={24} color="#2563eb" />
-          <Typography variant="h6" fontWeight={800} color="#0f172a">
-            إعداد اسم الكنيسة والخدمة
-          </Typography>
+        <DialogTitle sx={{ textAlign: 'start', pb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box
+              sx={{
+                width: 48,
+                height: 48,
+                borderRadius: 2.5,
+                bgcolor: '#eff6ff',
+                color: '#2563eb',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '1px solid #dbeafe',
+              }}
+            >
+              <Church size={26} />
+            </Box>
+            <Box sx={{ textAlign: 'start' }}>
+              <Typography variant="h6" fontWeight={900} color="#0f172a">
+                {!churchName ? 'مرحباً بك في برنامج كشف الطلاب' : 'تعديل اسم الكنيسة والخدمة'}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.2 }}>
+                {!churchName
+                  ? 'يرجى كتابة اسم الكنيسة لاستخدامه في كافة الكشوفات، التقارير المطبوعة، وقوالب الاستيراد.'
+                  : 'تحديث اسم الكنيسة سيتم تطبيقه فوراً على كافة الكشوفات والتقارير.'}
+              </Typography>
+            </Box>
+          </Box>
         </DialogTitle>
-        <DialogContent sx={{ pt: 1 }}>
+
+        <DialogContent sx={{ pt: 2, pb: 1 }}>
+          <Typography variant="body2" fontWeight={700} color="#334155" sx={{ mb: 1 }}>
+            اسم الكنيسة / مقر الخدمة
+          </Typography>
           <TextField
             autoFocus
             fullWidth
-            label="اسم الكنيسة"
-            placeholder="مثال: كنيسة الشهيد مارجرجس"
+            placeholder="مثال: كنيسة السيدة العذراء مريم والشهيد مارمينا"
             value={churchInputName}
             onChange={(e) => setChurchInputName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
+              if (e.key === 'Enter' && churchInputName.trim()) {
                 handleSaveChurchName();
               }
             }}
-            size="small"
+            size="medium"
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
-                  <Church size={18} color="#64748b" />
+                  <Church size={20} color="#64748b" />
                 </InputAdornment>
               ),
             }}
-            sx={{ mt: 1 }}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 2.5,
+                bgcolor: '#f8fafc',
+                fontWeight: 700,
+                fontSize: '1rem',
+              },
+            }}
           />
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setChurchModalOpen(false)} color="inherit" sx={{ fontWeight: 700 }}>
-            إلغاء
-          </Button>
+
+        <DialogActions sx={{ px: 3, pt: 1, pb: 2, display: 'flex', justifyContent: churchName ? 'space-between' : 'flex-end' }}>
+          {churchName ? (
+            <Button onClick={() => setChurchModalOpen(false)} color="inherit" sx={{ fontWeight: 700, borderRadius: 2 }}>
+              إلغاء
+            </Button>
+          ) : null}
           <Button
             variant="contained"
             onClick={() => handleSaveChurchName()}
             disabled={isSavingChurch || !churchInputName.trim()}
-            sx={{ fontWeight: 700, px: 3, borderRadius: 2 }}
+            sx={{
+              fontWeight: 800,
+              fontSize: '0.92rem',
+              px: 4,
+              py: 1.1,
+              borderRadius: 2.5,
+              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+              boxShadow: '0 4px 14px rgba(37, 99, 235, 0.3)',
+            }}
           >
-            {isSavingChurch ? 'جاري الحفظ...' : 'حفظ اسم الكنيسة'}
+            {isSavingChurch ? 'جاري الحفظ...' : !churchName ? 'حفظ ومتابعة إلى البرنامج' : 'حفظ التعديلات'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Upcoming Feature Notice Dialog */}
+      <Dialog
+        open={upcomingFeatureOpen}
+        onClose={() => setUpcomingFeatureOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        dir="rtl"
+        PaperProps={{
+          sx: {
+            borderRadius: 3.5,
+            p: 2.5,
+            textAlign: 'center',
+            boxShadow: '0 25px 60px rgba(15, 23, 42, 0.25)',
+            border: '1px solid #e2e8f0',
+          },
+        }}
+      >
+        <DialogContent sx={{ pt: 2, pb: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <Box
+            sx={{
+              width: 58,
+              height: 58,
+              borderRadius: '50%',
+              bgcolor: '#eff6ff',
+              color: '#2563eb',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              mb: 2,
+              boxShadow: '0 4px 16px rgba(37, 99, 235, 0.15)',
+              border: '1px solid #dbeafe',
+            }}
+          >
+            <Sparkles size={30} />
+          </Box>
+          <Typography variant="h6" fontWeight={900} color="#0f172a" sx={{ mb: 1 }}>
+            انتظروا التحديثات القادمة 🚀
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7, px: 1 }}>
+            ميزة <strong>توزيع وترقية الدفعات والمراحل الدراسية</strong> آلياً مع بداية العام الدراسي الجديد قيد التطوير والتجهيز وستصلكم في التحديث القادم بنعمة المسيح!
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ justifyContent: 'center', pb: 1, pt: 2 }}>
+          <Button
+            variant="contained"
+            onClick={() => setUpcomingFeatureOpen(false)}
+            sx={{
+              fontWeight: 800,
+              fontSize: '0.92rem',
+              px: 4,
+              py: 1,
+              borderRadius: 2.5,
+              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+              boxShadow: '0 4px 14px rgba(37, 99, 235, 0.25)',
+            }}
+          >
+            حسناً، فهمت
           </Button>
         </DialogActions>
       </Dialog>

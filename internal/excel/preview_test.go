@@ -70,3 +70,18 @@ func checksumID(first13 string) string {
 	checkDigit := (11 - (sum % 11)) % 10
 	return first13 + string(rune('0'+checkDigit))
 }
+
+func TestRealDataPerformance(t *testing.T) {
+	realDataPath := filepath.Join("..", "..", "Real-Data.xlsx")
+	preview, err := PreviewFile(realDataPath)
+	if err != nil {
+		t.Logf("Real-Data.xlsx not found or failed: %v", err)
+		return
+	}
+	t.Logf("Real-Data.xlsx parsed: %d total rows across %d sheets in preview", len(preview.Rows), len(preview.Sheets))
+	for _, sheet := range preview.Sheets {
+		t.Logf("Sheet: %s, Stage: %s, Rows: %d", sheet.Name, sheet.Stage, sheet.RowsFound)
+	}
+	t.Logf("Counts: Ready=%d, Review=%d, Errors=%d, Duplicate=%d, Updates=%d", preview.Ready, preview.Review, preview.Errors, preview.Duplicate, preview.Updates)
+}
+

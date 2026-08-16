@@ -221,7 +221,7 @@ func (a *App) IgnorePendingImportRow(id string) error {
 
 func (a *App) GetChurchName() (string, error) {
 	if a.studentSvc == nil {
-		return "كنيسة مارجرجس", nil
+		return "", nil
 	}
 	return a.studentSvc.GetChurchName()
 }
@@ -241,7 +241,7 @@ func (a *App) ExportStudentsToExcel(filePath string, stage string, churchName st
 		if dbName, err := a.studentSvc.GetChurchName(); err == nil && dbName != "" {
 			churchName = dbName
 		} else {
-			churchName = "كنيسة مارجرجس"
+			churchName = "الكنيسة"
 		}
 	}
 	if filePath == "" {
@@ -296,7 +296,7 @@ func (a *App) ExportBlankTemplate(filePath string, churchName string) error {
 			}
 		}
 		if churchName == "" {
-			churchName = "كنيسة مارجرجس"
+			churchName = "الكنيسة"
 		}
 	}
 	if filePath == "" {

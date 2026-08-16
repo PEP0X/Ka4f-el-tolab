@@ -47,7 +47,7 @@ interface StudentDetailsModalProps {
 export const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
   open,
   student,
-  churchName = 'كنيسة مارجرجس',
+  churchName = '',
   onClose,
   onEdit,
   onDelete,

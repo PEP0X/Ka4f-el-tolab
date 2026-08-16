@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"Ka4f-El-Tolab/internal/database"
 	"Ka4f-El-Tolab/internal/excel"
 	"Ka4f-El-Tolab/internal/models"
 	"Ka4f-El-Tolab/internal/repository"
@@ -26,31 +27,39 @@ func NewExcelService(db *sql.DB, studentSvc *StudentService) *ExcelService {
 }
 
 // PreviewImport parses and validates an Excel file without writing to the database.
-// Existing records are attached to support user-reviewed upserts.
+// Existing records are attached to support user-reviewed upserts in a single batch query.
 func (s *ExcelService) PreviewImport(filePath string) (models.ImportPreview, error) {
 	preview, err := excel.PreviewFile(filePath)
 	if err != nil {
 		return preview, err
 	}
 
-	// Attach existing records for upsert detection
+	// Batch attach existing records for O(1) upsert detection
+	nids := make([]string, 0, len(preview.Rows))
 	for i := range preview.Rows {
-		row := &preview.Rows[i]
-		if row.Student.NationalID == "" {
-			continue
+		if preview.Rows[i].Student.NationalID != "" {
+			nids = append(nids, preview.Rows[i].Student.NationalID)
 		}
-		existing, err := s.studentSvc.repo.FindByNationalID(row.Student.NationalID)
-		if err != nil {
-			slog.Warn("failed to check existing student", "nid", row.Student.NationalID, "error", err)
-			continue
-		}
-		if existing != nil {
-			row.Existing = existing
-			if row.Status == "ready" {
-				row.Status = "update"
+	}
+
+	existingMap, err := s.studentSvc.FindByNationalIDs(nids)
+	if err != nil {
+		slog.Warn("failed to batch check existing students", "error", err)
+	} else if existingMap != nil {
+		for i := range preview.Rows {
+			row := &preview.Rows[i]
+			if row.Student.NationalID == "" {
+				continue
+			}
+			if existing, ok := existingMap[row.Student.NationalID]; ok && existing != nil {
+				row.Existing = existing
+				if row.Status == "ready" {
+					row.Status = "update"
+				}
 			}
 		}
 	}
+
 	preview.Recalculate()
 	return preview, nil
 }
@@ -70,10 +79,13 @@ func (s *ExcelService) CommitPreview(preview models.ImportPreview) (models.Commi
 		preview.Rows[i].Student = normalized
 	}
 
-	session, batchResult, err := s.importRepo.CreateSession(preview, s.studentSvc.ImportBatch)
+	session, batchResult, err := s.importRepo.CreateSession(preview, s.studentSvc.ImportBatchTx)
 	if err != nil {
 		return models.CommitPreviewResult{}, err
 	}
+
+	// WAL checkpoint after import
+	_ = database.Checkpoint(s.db)
 
 	slog.Info("import committed",
 		"session", session.ID,
@@ -118,7 +130,7 @@ func (s *ExcelService) ResolvePendingRow(id string, student models.Student) (mod
 	if !validation.Valid {
 		return models.ImportBatchResult{}, fmt.Errorf("لا يمكن الحفظ: %s", validation.Message)
 	}
-	return s.importRepo.ResolveRow(id, validation.Student, s.studentSvc.ImportBatch)
+	return s.importRepo.ResolveRow(id, validation.Student, s.studentSvc.ImportBatchTx)
 }
 
 // ResolveDuplicate resolves a duplicate conflict.
@@ -127,12 +139,12 @@ func (s *ExcelService) ResolveDuplicate(winnerID string, loserIDs []string, stud
 	if !validation.Valid {
 		return models.ImportBatchResult{}, fmt.Errorf("لا يمكن الدمج: %s", validation.Message)
 	}
-	return s.importRepo.ResolveDuplicate(winnerID, loserIDs, validation.Student, s.studentSvc.ImportBatch)
+	return s.importRepo.ResolveDuplicate(winnerID, loserIDs, validation.Student, s.studentSvc.ImportBatchTx)
 }
 
 // ResolveGradeGroup resolves all rows in a grade group.
 func (s *ExcelService) ResolveGradeGroup(sessionID, stage, groupKey, grade string) (int, error) {
-	return s.importRepo.ResolveGradeGroup(sessionID, stage, groupKey, grade, excel.NormalizeReviewedStudent, s.studentSvc.ImportBatch)
+	return s.importRepo.ResolveGradeGroup(sessionID, stage, groupKey, grade, excel.NormalizeReviewedStudent, s.studentSvc.ImportBatchTx)
 }
 
 // IgnorePendingRow marks a pending row as ignored.

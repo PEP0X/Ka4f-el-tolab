@@ -19,6 +19,7 @@ import { Check, AlertCircle, Link2, Ban, GitMerge, UserCheck, Copy, Sparkles } f
 import { useCorrectionStore, withLocalEdits } from '../../store/useCorrectionStore';
 import { CANONICAL_GRADES, mergeStudents, COMPARABLE_FIELDS, calculateStringSimilarity } from '../../lib/correction';
 import { inspectEgyptianNID } from '../../lib/nidInspector';
+import { matchQueryTokens } from '../../lib/normalization/arabic';
 import type { PendingImportRow, Student } from '../../types/student';
 
 interface Props {
@@ -37,14 +38,18 @@ export const DuplicatesTab: React.FC<Props> = ({ rows, search }) => {
   const [mergingAll, setMergingAll] = useState(false);
 
   const filtered = useMemo(() => {
-    const s = search.trim();
-    if (!s) return rows;
-    return rows.filter(
-      (r) =>
-        r.row.student.fullName?.includes(s) ||
-        r.row.student.nationalId?.includes(s) ||
-        r.row.student.phone?.includes(s)
-    );
+    if (!search.trim()) return rows;
+    return rows.filter((r) => {
+      const s = r.row.student;
+      return matchQueryTokens(search, [
+        s.fullName,
+        s.nationalId,
+        s.phone,
+        s.parentPhone,
+        s.stage,
+        s.grade,
+      ]).matched;
+    });
   }, [rows, search]);
 
   const groups = useMemo(() => groupDuplicates(filtered), [filtered]);

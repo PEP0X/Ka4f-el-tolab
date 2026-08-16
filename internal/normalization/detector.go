@@ -232,8 +232,31 @@ func Similarity(a, b string) float64 {
 	if a == "" || b == "" {
 		return 0.0
 	}
-	dist := levenshtein([]rune(a), []rune(b))
-	maxLen := max(len([]rune(a)), len([]rune(b)))
+	return RuneSimilarity([]rune(a), []rune(b))
+}
+
+// RuneSimilarity calculates Levenshtein similarity between pre-converted rune slices
+func RuneSimilarity(a, b []rune) float64 {
+	lenA := len(a)
+	lenB := len(b)
+	if lenA == 0 && lenB == 0 {
+		return 1.0
+	}
+	if lenA == 0 || lenB == 0 {
+		return 0.0
+	}
+	diff := lenA - lenB
+	if diff < 0 {
+		diff = -diff
+	}
+	maxLen := lenA
+	if lenB > maxLen {
+		maxLen = lenB
+	}
+	if float64(diff)/float64(maxLen) > 0.06001 {
+		return 0.0
+	}
+	dist := levenshtein(a, b)
 	return 1.0 - (float64(dist) / float64(maxLen))
 }
 

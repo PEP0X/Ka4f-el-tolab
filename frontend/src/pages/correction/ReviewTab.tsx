@@ -21,7 +21,9 @@ import {
 import { Check, ChevronDown, ChevronUp, FileWarning, FileCheck, Ban, Sparkles, AlertTriangle } from 'lucide-react';
 import { useCorrectionStore, withLocalEdits } from '../../store/useCorrectionStore';
 import { CANONICAL_GRADES, SECONDARY_TRACKS, CONFIDENCE_AUTO, groupNeedsReviewRows, PendingGroup } from '../../lib/correction';
-import type { PendingImportRow } from '../../types/student';
+import { inspectEgyptianNID } from '../../lib/nidInspector';
+import { matchQueryTokens } from '../../lib/normalization/arabic';
+import type { PendingImportRow, Student } from '../../types/student';
 
 interface Props {
   rows: PendingImportRow[];
@@ -37,14 +39,19 @@ export const ReviewTab: React.FC<Props> = ({ rows, search }) => {
   const [isApplyingBulk, setIsApplyingBulk] = useState(false);
 
   const filtered = useMemo(() => {
-    const s = search.trim();
-    if (!s) return rows;
-    return rows.filter(
-      (r) =>
-        r.row.student.fullName?.includes(s) ||
-        r.row.student.nationalId?.includes(s) ||
-        r.rawGrade?.includes(s)
-    );
+    if (!search.trim()) return rows;
+    return rows.filter((r) => {
+      const s = r.row.student;
+      return matchQueryTokens(search, [
+        s.fullName,
+        s.nationalId,
+        s.phone,
+        s.parentPhone,
+        r.rawGrade,
+        s.stage,
+        s.grade,
+      ]).matched;
+    });
   }, [rows, search]);
 
   const groups = useMemo(() => {
@@ -161,10 +168,9 @@ export const ReviewTab: React.FC<Props> = ({ rows, search }) => {
                   </th>
                   <th style={{ padding: '12px 14px', fontSize: '0.8rem', fontWeight: 800, color: '#475569' }}>#</th>
                   <th style={{ padding: '12px 14px', fontSize: '0.8rem', fontWeight: 800, color: '#475569' }}>اسم الطالب</th>
-                  <th style={{ padding: '12px 14px', fontSize: '0.8rem', fontWeight: 800, color: '#475569' }}>الرقم القومي</th>
-                  <th style={{ padding: '12px 14px', fontSize: '0.8rem', fontWeight: 800, color: '#475569' }}>المرحلة</th>
-                  <th style={{ padding: '12px 14px', fontSize: '0.8rem', fontWeight: 800, color: '#475569' }}>النص الأصلي من Excel</th>
-                  <th style={{ padding: '12px 14px', fontSize: '0.8rem', fontWeight: 800, color: '#475569', minWidth: 220 }}>الصف المحدد</th>
+                  <th style={{ padding: '12px 14px', fontSize: '0.8rem', fontWeight: 800, color: '#475569' }}>الرقم القومي والعمر</th>
+                  <th style={{ padding: '12px 14px', fontSize: '0.8rem', fontWeight: 800, color: '#475569' }}>المرحلة والصف المعتمد</th>
+                  <th style={{ padding: '12px 14px', fontSize: '0.8rem', fontWeight: 800, color: '#475569', minWidth: 260 }}>سبب المراجعة بالتفصيل</th>
                   <th style={{ padding: '12px 14px', fontSize: '0.8rem', fontWeight: 800, color: '#475569', textAlign: 'center' }}>الإجراء</th>
                 </tr>
               </thead>
@@ -174,6 +180,18 @@ export const ReviewTab: React.FC<Props> = ({ rows, search }) => {
                   const s = effective.row.student;
                   const grades = CANONICAL_GRADES[s.stage] || [];
                   const isSelected = selectedIds.has(row.id);
+                  const nidInfo = inspectEgyptianNID(s.nationalId, s.stage);
+
+                  // Reason for review
+                  let rowReason = '';
+                  if (nidInfo.stageWarning) {
+                    rowReason = `⚠️ ${nidInfo.stageWarning}`;
+                  } else if (row.rawGrade && s.grade && row.rawGrade !== s.grade) {
+                    rowReason = `💡 توحيد مسمى: "${row.rawGrade}" ← "${s.grade}"`;
+                  } else {
+                    rowReason = 'تأكيد الصف الدراسي قبل الاستيراد';
+                  }
+
                   return (
                     <tr
                       key={row.id}
@@ -196,31 +214,50 @@ export const ReviewTab: React.FC<Props> = ({ rows, search }) => {
                       <td style={{ padding: '8px 14px', fontWeight: 700, color: '#0f172a' }}>
                         {s.fullName}
                       </td>
-                      <td style={{ padding: '8px 14px', fontFamily: 'monospace', fontSize: '0.88rem', color: '#475569' }}>
-                        {s.nationalId}
-                      </td>
                       <td style={{ padding: '8px 14px' }}>
-                        <Chip label={s.stage} size="small" sx={{ bgcolor: '#f1f5f9', fontWeight: 700, fontSize: '0.74rem' }} />
-                      </td>
-                      <td style={{ padding: '8px 14px' }}>
-                        <Typography variant="caption" fontWeight={700} color="#d97706" sx={{ bgcolor: '#fffbeb', px: 1, py: 0.4, borderRadius: 1, border: '1px solid #fef3c7' }}>
-                          {row.rawGrade || '—'}
+                        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.85rem', color: '#334155' }}>
+                          {s.nationalId}
                         </Typography>
+                        {nidInfo.birthDate && (
+                          <Typography variant="caption" color="text.secondary" display="block">
+                            {nidInfo.age} سنة • {nidInfo.birthDate}
+                          </Typography>
+                        )}
                       </td>
                       <td style={{ padding: '8px 14px' }}>
-                        <FormControl size="small" fullWidth>
-                          <Select
-                            value={s.grade || ''}
-                            onChange={(e) => editRow(row.id, { grade: e.target.value })}
-                            sx={{ height: 32, fontSize: '0.82rem', bgcolor: '#fff' }}
-                          >
-                            {grades.map((g) => (
-                              <MenuItem key={g} value={g} sx={{ fontSize: '0.82rem' }}>
-                                {g}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Chip label={s.stage} size="small" sx={{ bgcolor: '#eff6ff', color: '#2563eb', fontWeight: 700, fontSize: '0.72rem' }} />
+                          <FormControl size="small" sx={{ minWidth: 160 }}>
+                            <Select
+                              value={s.grade || ''}
+                              onChange={(e) => editRow(row.id, { grade: e.target.value })}
+                              sx={{ height: 32, fontSize: '0.82rem', bgcolor: '#fff' }}
+                            >
+                              {grades.map((g) => (
+                                <MenuItem key={g} value={g} sx={{ fontSize: '0.82rem' }}>
+                                  {g}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        </Box>
+                      </td>
+                      <td style={{ padding: '8px 14px' }}>
+                        <Typography
+                          variant="caption"
+                          fontWeight={700}
+                          sx={{
+                            color: nidInfo.stageWarning ? '#b45309' : '#0369a1',
+                            bgcolor: nidInfo.stageWarning ? '#fffbeb' : '#f0f9ff',
+                            px: 1,
+                            py: 0.5,
+                            borderRadius: 1.5,
+                            display: 'inline-block',
+                            border: `1px solid ${nidInfo.stageWarning ? '#fde68a' : '#bae6fd'}`,
+                          }}
+                        >
+                          {rowReason}
+                        </Typography>
                       </td>
                       <td style={{ padding: '8px 14px', textAlign: 'center' }}>
                         <Button
@@ -354,6 +391,7 @@ export const ReviewTab: React.FC<Props> = ({ rows, search }) => {
           resolveGroup={resolveGroup}
           ignoreRow={ignoreRow}
           editRow={editRow}
+          resolveRow={resolveRow}
           savingIds={savingIds}
         />
       ))}
@@ -367,8 +405,11 @@ interface GroupCardProps {
   resolveGroup: (sessionId: string, stage: string, groupKey: string, grade: string) => Promise<number>;
   ignoreRow: (id: string) => Promise<void>;
   editRow: (id: string, partial: any) => void;
+  resolveRow: (id: string, student: Student) => Promise<any>;
   savingIds: Set<string>;
 }
+
+const ALL_STAGES = ['حضانات', 'ابتدائي', 'إعدادي', 'ثانوي', 'جامعة'];
 
 const GroupCard: React.FC<GroupCardProps> = ({
   group,
@@ -376,6 +417,7 @@ const GroupCard: React.FC<GroupCardProps> = ({
   resolveGroup,
   ignoreRow,
   editRow,
+  resolveRow,
   savingIds,
 }) => {
   const [manual, setManual] = useState('');
@@ -386,6 +428,38 @@ const GroupCard: React.FC<GroupCardProps> = ({
   const showSuggestion = group.suggestion && hasHighConfidence;
   const grades = CANONICAL_GRADES[group.stage] || [];
   const confPct = Math.round((group.confidence || 0) * 100);
+
+  // Compute all unique reasons why this group / its rows are in review
+  const reviewReasons = useMemo(() => {
+    const reasons: string[] = [];
+    const rawClean = (group.rawGrade || '').trim();
+    const sug = (group.suggestion || '').trim();
+
+    if (rawClean && sug && rawClean !== sug) {
+      reasons.push(`صياغة الصف في Excel غير قياسية: "${rawClean}" ← المقترح القياسي: "${sug}"`);
+    } else if (!sug) {
+      reasons.push(`الصف الدراسي غير محدد أو لم يُتعرف عليه تلقائياً: "${rawClean || 'فارغ'}"`);
+    }
+
+    const ageWarnings = new Set<string>();
+    for (const { row } of group.rows) {
+      const nidInfo = inspectEgyptianNID(row.student.nationalId, row.student.stage || group.stage);
+      if (nidInfo.stageWarning) {
+        ageWarnings.add(`${row.student.fullName || 'طالب'}: ${nidInfo.stageWarning}`);
+      }
+      for (const issue of row.issues || []) {
+        if (issue.kind === 'review' && issue.message && !issue.message.includes('الصف الدراسي')) {
+          ageWarnings.add(`${row.student.fullName || 'طالب'}: ${issue.message}`);
+        }
+      }
+    }
+
+    ageWarnings.forEach((w) => reasons.push(w));
+    if (!reasons.length) {
+      reasons.push('مراجعة وتأكيد الصف الدراسي والمرحلة قبل الحفظ النهائي');
+    }
+    return reasons;
+  }, [group]);
 
   const handleResolve = async (grade: string) => {
     if (!sessionId || resolving) return;
@@ -418,7 +492,7 @@ const GroupCard: React.FC<GroupCardProps> = ({
         },
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, mb: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, mb: 1.5 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1, flexWrap: 'wrap' }}>
           <Chip
             label={`${group.rows.length} طالب`}
@@ -489,6 +563,32 @@ const GroupCard: React.FC<GroupCardProps> = ({
             />
           </Box>
         )}
+      </Box>
+
+      {/* EXPLICIT REASON FOR REVIEW BANNER */}
+      <Box
+        sx={{
+          mb: 2,
+          p: 1.5,
+          borderRadius: 2,
+          bgcolor: '#fffbeb',
+          border: '1px solid #fde68a',
+          textAlign: 'start',
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+          <AlertTriangle size={16} color="#d97706" />
+          <Typography variant="subtitle2" fontWeight={800} color="#b45309">
+            سبب طلب المراجعة لهذا السجل:
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4, pl: 0.5 }}>
+          {reviewReasons.map((reason, idx) => (
+            <Typography key={idx} variant="body2" color="#92400e" sx={{ fontSize: '0.82rem', fontWeight: 600 }}>
+              • {reason}
+            </Typography>
+          ))}
+        </Box>
       </Box>
 
       {/* Suggested Action Bar */}
@@ -576,7 +676,7 @@ const GroupCard: React.FC<GroupCardProps> = ({
             onClick={() => setExpanded((v) => !v)}
             sx={{ borderRadius: 2, bgcolor: '#fff' }}
           >
-            {expanded ? 'إخفاء الطلاب' : `تعديل فردي (${group.rows.length})`}
+            {expanded ? 'إخفاء الطلاب' : `تعديل فردي ومراجعة (${group.rows.length})`}
           </Button>
 
           <Tooltip title="تجاهل كل الطلاب في هذه المجموعة">
@@ -597,84 +697,167 @@ const GroupCard: React.FC<GroupCardProps> = ({
 
       {/* EXPANDABLE INDIVIDUAL ROW EDITORS */}
       <Collapse in={expanded} unmountOnExit>
-        <Box sx={{ mt: 2, pt: 1.5, borderTop: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ textAlign: 'start', mb: 0.5 }}>
-            قائمة الطلاب في هذه المجموعة (يمكنك تعديل أي بيانات لكل طالب على حدة):
+        <Box sx={{ mt: 2, pt: 1.5, borderTop: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+          <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ textAlign: 'start' }}>
+            قائمة الطلاب في هذه المجموعة (يمكنك تعديل المرحلة، الصف، أو اعتماد كل طالب بمفرده):
           </Typography>
 
           {group.rows.map(({ id, row }) => {
             const s = row.student;
-            const isSecondary = group.stage === 'ثانوي';
+            const nidInfo = inspectEgyptianNID(s.nationalId, s.stage || group.stage);
+            const currentGrades = CANONICAL_GRADES[s.stage || group.stage] || [];
+            const isSecondary = (s.stage || group.stage) === 'ثانوي';
             const saving = savingIds.has(id);
+
             return (
-              <Box
+              <Paper
                 key={id}
+                elevation={0}
                 sx={{
-                  display: 'grid',
-                  gridTemplateColumns: isSecondary ? '1.4fr 1.2fr 1.2fr 1.1fr auto' : '1.5fr 1.3fr 1.5fr auto',
-                  gap: 1,
-                  alignItems: 'center',
-                  p: 1.2,
+                  p: 1.5,
                   bgcolor: '#f8fafc',
                   borderRadius: 2,
                   border: '1px solid #e2e8f0',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1.2,
+                  textAlign: 'start',
                   '&:hover': { bgcolor: '#f1f5f9' },
                 }}
               >
-                <TextField
-                  size="small"
-                  label="الاسم"
-                  value={s.fullName || ''}
-                  onChange={(e) => editRow(id, { fullName: e.target.value })}
-                  sx={{ bgcolor: '#fff' }}
-                />
-                <TextField
-                  size="small"
-                  label="الرقم القومي"
-                  value={s.nationalId || ''}
-                  inputProps={{ style: { fontFamily: 'monospace', direction: 'ltr' } }}
-                  onChange={(e) => editRow(id, { nationalId: e.target.value })}
-                  sx={{ bgcolor: '#fff' }}
-                />
-                <FormControl size="small" sx={{ bgcolor: '#fff' }}>
-                  <InputLabel>الصف</InputLabel>
-                  <Select
-                    label="الصف"
-                    value={s.grade || ''}
-                    onChange={(e) => editRow(id, { grade: e.target.value })}
-                  >
-                    {grades.map((g) => (
-                      <MenuItem key={g} value={g}>
-                        {g}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-                {isSecondary && (
+                {/* NID Insights Bar for this student */}
+                {nidInfo.birthDate && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, pb: 0.8, borderBottom: '1px dashed #e2e8f0' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                      <Chip
+                        label={`تاريخ الميلاد: ${nidInfo.formattedDate || nidInfo.birthDate}`}
+                        size="small"
+                        sx={{ bgcolor: '#fff', fontSize: '0.72rem', fontWeight: 700, border: '1px solid #e2e8f0' }}
+                      />
+                      <Chip
+                        label={`العمر: ${nidInfo.age} سنة`}
+                        size="small"
+                        sx={{ bgcolor: nidInfo.stageWarning ? '#fef2f2' : '#fff', color: nidInfo.stageWarning ? '#dc2626' : '#475569', fontSize: '0.72rem', fontWeight: 800, border: '1px solid #e2e8f0' }}
+                      />
+                      {nidInfo.governorate && (
+                        <Chip
+                          label={`محافظة: ${nidInfo.governorate}`}
+                          size="small"
+                          sx={{ bgcolor: '#fff', fontSize: '0.72rem', fontWeight: 600, border: '1px solid #e2e8f0' }}
+                        />
+                      )}
+                      <Chip
+                        label={`النوع: ${nidInfo.gender}`}
+                        size="small"
+                        sx={{ bgcolor: '#fff', fontSize: '0.72rem', fontWeight: 600, border: '1px solid #e2e8f0' }}
+                      />
+                    </Box>
+
+                    {nidInfo.stageWarning && (
+                      <Typography variant="caption" fontWeight={800} color="#dc2626">
+                        ⚠️ {nidInfo.stageWarning}
+                      </Typography>
+                    )}
+                  </Box>
+                )}
+
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      sm: '1.4fr 1.2fr 1fr 1.2fr auto',
+                    },
+                    gap: 1,
+                    alignItems: 'center',
+                  }}
+                >
+                  <TextField
+                    size="small"
+                    label="الاسم"
+                    value={s.fullName || ''}
+                    onChange={(e) => editRow(id, { fullName: e.target.value })}
+                    sx={{ bgcolor: '#fff' }}
+                  />
+                  <TextField
+                    size="small"
+                    label="الرقم القومي"
+                    value={s.nationalId || ''}
+                    inputProps={{ style: { fontFamily: 'monospace', direction: 'ltr' } }}
+                    onChange={(e) => editRow(id, { nationalId: e.target.value })}
+                    sx={{ bgcolor: '#fff' }}
+                  />
                   <FormControl size="small" sx={{ bgcolor: '#fff' }}>
-                    <InputLabel>المسار</InputLabel>
+                    <InputLabel>المرحلة</InputLabel>
                     <Select
-                      label="المسار"
-                      value={s.track || 'عام'}
-                      onChange={(e) => editRow(id, { track: e.target.value })}
+                      label="المرحلة"
+                      value={s.stage || group.stage}
+                      onChange={(e) => {
+                        const newStage = e.target.value;
+                        const available = CANONICAL_GRADES[newStage] || [];
+                        editRow(id, { stage: newStage, grade: available[0] || '' });
+                      }}
                     >
-                      {SECONDARY_TRACKS.map((trk) => (
-                        <MenuItem key={trk} value={trk}>
-                          {trk}
+                      {ALL_STAGES.map((stg) => (
+                        <MenuItem key={stg} value={stg}>
+                          {stg}
                         </MenuItem>
                       ))}
                     </Select>
                   </FormControl>
-                )}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  {saving && <FileWarning size={14} color="#d97706" />}
-                  <Tooltip title="تجاهل هذا الطالب">
-                    <IconButton size="small" onClick={() => ignoreRow(id)}>
-                      <Ban size={14} />
-                    </IconButton>
-                  </Tooltip>
+                  <FormControl size="small" sx={{ bgcolor: '#fff' }}>
+                    <InputLabel>الصف</InputLabel>
+                    <Select
+                      label="الصف"
+                      value={s.grade || ''}
+                      onChange={(e) => editRow(id, { grade: e.target.value })}
+                    >
+                      {currentGrades.map((g) => (
+                        <MenuItem key={g} value={g}>
+                          {g}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  {isSecondary && (
+                    <FormControl size="small" sx={{ bgcolor: '#fff' }}>
+                      <InputLabel>المسار</InputLabel>
+                      <Select
+                        label="المسار"
+                        value={s.track || 'عام'}
+                        onChange={(e) => editRow(id, { track: e.target.value })}
+                      >
+                        {SECONDARY_TRACKS.map((trk) => (
+                          <MenuItem key={trk} value={trk}>
+                            {trk}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  )}
+
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      color="success"
+                      disabled={saving || !s.grade}
+                      onClick={async () => {
+                        await resolveRow(id, s);
+                      }}
+                      startIcon={<Check size={14} />}
+                      sx={{ fontWeight: 800, fontSize: '0.75rem', px: 1.5, borderRadius: 1.5 }}
+                    >
+                      اعتماد
+                    </Button>
+                    <Tooltip title="تجاهل هذا الطالب">
+                      <IconButton size="small" onClick={() => ignoreRow(id)} sx={{ border: '1px solid #e2e8f0', bgcolor: '#fff' }}>
+                        <Ban size={14} />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
                 </Box>
-              </Box>
+              </Paper>
             );
           })}
         </Box>

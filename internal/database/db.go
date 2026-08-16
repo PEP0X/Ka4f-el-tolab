@@ -27,16 +27,18 @@ func Open(paths config.Paths) (*sql.DB, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	// Desktop app: single writer, multiple readers
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
+	// Desktop app with WAL mode: supports concurrent readers and serialized writer
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(0)
 
 	pragmas := []string{
 		"PRAGMA journal_mode=WAL;",
 		"PRAGMA foreign_keys=ON;",
 		"PRAGMA synchronous=NORMAL;",
-		"PRAGMA busy_timeout=5000;",
+		"PRAGMA busy_timeout=10000;",
+		"PRAGMA cache_size=-64000;",
+		"PRAGMA temp_store=MEMORY;",
 		"PRAGMA wal_autocheckpoint=1000;",
 	}
 	for _, p := range pragmas {

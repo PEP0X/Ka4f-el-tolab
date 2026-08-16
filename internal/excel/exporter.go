@@ -44,7 +44,7 @@ type exportStyles struct {
 // and a consolidated all-students sheet.
 func ExportStudentsToExcel(students []models.Student, filePath string, churchName string) error {
 	if strings.TrimSpace(churchName) == "" {
-		churchName = "كنيسة مارجرجس"
+		churchName = "الكنيسة"
 	}
 
 	f := excelize.NewFile()
@@ -119,7 +119,7 @@ func ExportStudentsToExcel(students []models.Student, filePath string, churchNam
 // and instructions for church servants to fill in and re-import data easily.
 func ExportBlankImportTemplate(filePath string, churchName string) error {
 	if strings.TrimSpace(churchName) == "" {
-		churchName = "كنيسة مارجرجس"
+		churchName = "الكنيسة"
 	}
 
 	f := excelize.NewFile()
@@ -130,30 +130,20 @@ func ExportBlankImportTemplate(filePath string, churchName string) error {
 		return fmt.Errorf("failed to create workbook styles: %w", err)
 	}
 
-	// 1. Instructions Sheet
-	guideSheet := "📖 دليل وتعليمات الاستيراد"
-	guideIdx, err := f.NewSheet(guideSheet)
-	if err != nil {
-		return err
-	}
-	if err := buildTemplateGuideSheet(f, guideSheet, styles, churchName); err != nil {
-		return fmt.Errorf("failed to build template guide sheet: %w", err)
-	}
-
-	// 2. Stage Template Sheets
+	// 1. Stage Template Sheets matching Real-Data.xlsx
 	templateSheets := []struct {
 		title    string
 		stageKey string
 		grades   []string
 	}{
-		{"👶 حضانات (KG)", "حضانات", []string{"الحضانة الأولى (Pre-KG)", "KG1", "KG2"}},
-		{"🎒 المرحلة الابتدائية", "ابتدائي", []string{"الصف الأول الابتدائي", "الصف الثاني الابتدائي", "الصف الثالث الابتدائي", "الصف الرابع الابتدائي", "الصف الخامس الابتدائي", "الصف السادس الابتدائي"}},
-		{"📘 المرحلة الإعدادية", "إعدادي", []string{"الصف الأول الإعدادي", "الصف الثاني الإعدادي", "الصف الثالث الإعدادي"}},
-		{"🎓 المرحلة الثانوية", "ثانوي", []string{"انتظار التنسيق", "الصف الأول الثانوي", "الصف الثاني الثانوي", "الصف الثالث الثانوي"}},
-		{"🏛️ مرحلة الجامعة", "جامعة", []string{"الفرقة الأولى", "الفرقة الثانية", "الفرقة الثالثة", "الفرقة الرابعة", "الفرقة الخامسة", "الفرقة السادسة", "متخرج"}},
+		{"طلاب مرحلة الحضانات (KG)", "حضانات", []string{"الحضانة الأولى (Pre-KG)", "KG1", "KG2"}},
+		{"طلاب المرحلة الابتدائية", "ابتدائي", []string{"الصف الأول الابتدائي", "الصف الثاني الابتدائي", "الصف الثالث الابتدائي", "الصف الرابع الابتدائي", "الصف الخامس الابتدائي", "الصف السادس الابتدائي"}},
+		{"طلاب المرحلة الإعدادية", "إعدادي", []string{"الصف الأول الإعدادي", "الصف الثاني الإعدادي", "الصف الثالث الإعدادي"}},
+		{"طلاب المرحلة الثانوية", "ثانوي", []string{"الصف الأول الثانوي", "الصف الثاني الثانوي", "الصف الثالث الثانوي", "انتظار التنسيق"}},
+		{"طلاب المعاهد والجامعات", "جامعة", []string{"الفرقة الأولى", "الفرقة الثانية", "الفرقة الثالثة", "الفرقة الرابعة", "الفرقة الخامسة", "الفرقة السادسة", "متخرج", "دراسات عليا"}},
 	}
 
-	for _, ts := range templateSheets {
+	for i, ts := range templateSheets {
 		_, err := f.NewSheet(ts.title)
 		if err != nil {
 			return err
@@ -161,10 +151,22 @@ func ExportBlankImportTemplate(filePath string, churchName string) error {
 		if err := buildStageTemplateSheet(f, ts.title, ts.stageKey, ts.grades, styles, churchName); err != nil {
 			return fmt.Errorf("failed to build template sheet %s: %w", ts.title, err)
 		}
+		if i == 0 {
+			f.SetActiveSheet(0)
+		}
+	}
+
+	// 2. Instructions Sheet at the end
+	guideSheet := "📖 دليل وتعليمات الاستيراد"
+	_, err = f.NewSheet(guideSheet)
+	if err != nil {
+		return err
+	}
+	if err := buildTemplateGuideSheet(f, guideSheet, styles, churchName); err != nil {
+		return fmt.Errorf("failed to build template guide sheet: %w", err)
 	}
 
 	_ = f.DeleteSheet("Sheet1")
-	f.SetActiveSheet(guideIdx)
 
 	return f.SaveAs(filePath)
 }
@@ -845,93 +847,169 @@ func buildStageTemplateSheet(f *excelize.File, sheet string, stageKey string, st
 	isRTL := true
 	_ = f.SetSheetView(sheet, 0, &excelize.ViewOptions{RightToLeft: &isRTL})
 
-	headers := []string{
-		"م",
-		"الاسم الكامل",
-		"اسم رب الأسرة",
-		"الرقم القومي (14 رقم)",
-		"المرحلة التعليمية",
-		"الصف / الفرقة الدراسية",
-		"اسم المدرسة / الكلية",
-		"الجامعة / التخصص",
-		"مسار الثانوية",
-		"النوع",
-		"تاريخ الميلاد (YYYY-MM-DD)",
-		"المحافظة",
-		"رقم تليفون الطالب",
-		"هاتف ولي الأمر",
-		"العنوان بالتفصيل",
-		"رقم الأسرة بكشوفات الكنيسة",
-		"رقم الطالب بالرعاية",
-		"رقم الأسرة بالرعاية",
-		"رقم الطالب بالعضوية",
-		"رقم الأسرة بالعضوية",
-		"ملاحظات",
+	var headers []string
+	var colWidths map[string]float64
+
+	if stageKey == "جامعة" {
+		headers = []string{
+			"م",
+			"صورة الطالب",
+			"أسم الطالب *",
+			"الرقم القومى *",
+			"الجامعة / المعهد *",
+			"الكلية / التخصص *",
+			"عدد سنين الدراسة",
+			"الفرقة الدراسية / الحالة *",
+			"هاتف ولي الأمر (اختياري)",
+			"رقم تليفون الطالب (اختياري)",
+			"العنوان بالتفصيل (اختياري)",
+			"رقم الأسرة بكشوفات الكنيسة (اختياري)",
+			"رقم الطالب - الرعاية الكاتدرائية",
+			"رقم الاسرة - الرعاية الكاتدرائية",
+			"رقم الطالب - العضوية الإسكندرية",
+			"رقم الاسرة - العضوية الإسكندرية",
+			"ملاحظات",
+		}
+		colWidths = map[string]float64{
+			"A": 6, "B": 14, "C": 30, "D": 22, "E": 26, "F": 26,
+			"G": 18, "H": 26, "I": 24, "J": 24, "K": 32, "L": 26,
+			"M": 24, "N": 24, "O": 24, "P": 24, "Q": 30,
+		}
+	} else if stageKey == "ثانوي" {
+		headers = []string{
+			"م",
+			"صورة الطالب",
+			"أسم الطالب *",
+			"الرقم القومى *",
+			"السنة الدراسية *",
+			"نوع / مسار الثانوية *",
+			"اسم المدرسة (اختياري)",
+			"هاتف ولي الأمر (اختياري)",
+			"رقم تليفون الطالب (اختياري)",
+			"العنوان بالتفصيل (اختياري)",
+			"رقم الأسرة بكشوفات الكنيسة (اختياري)",
+			"رقم الطالب - الرعاية الكاتدرائية",
+			"رقم الاسرة - الرعاية الكاتدرائية",
+			"رقم الطالب - العضوية الإسكندرية",
+			"رقم الاسرة - العضوية الإسكندرية",
+			"ملاحظات",
+		}
+		colWidths = map[string]float64{
+			"A": 6, "B": 14, "C": 30, "D": 22, "E": 24, "F": 24,
+			"G": 26, "H": 24, "I": 24, "J": 32, "K": 26,
+			"L": 24, "M": 24, "N": 24, "O": 24, "P": 30,
+		}
+	} else {
+		headers = []string{
+			"م",
+			"صورة الطالب",
+			"أسم الطالب *",
+			"الرقم القومى *",
+			"السنة الدراسية *",
+			"اسم المدرسة (اختياري)",
+			"هاتف ولي الأمر (اختياري)",
+			"رقم تليفون الطالب (اختياري)",
+			"العنوان بالتفصيل (اختياري)",
+			"رقم الأسرة بكشوفات الكنيسة (اختياري)",
+			"رقم الطالب - الرعاية الكاتدرائية",
+			"رقم الاسرة - الرعاية الكاتدرائية",
+			"رقم الطالب - العضوية الإسكندرية",
+			"رقم الاسرة - العضوية الإسكندرية",
+			"ملاحظات",
+		}
+		colWidths = map[string]float64{
+			"A": 6, "B": 14, "C": 30, "D": 22, "E": 24,
+			"F": 26, "G": 24, "H": 24, "I": 32, "J": 26,
+			"K": 24, "L": 24, "M": 24, "N": 24, "O": 30,
+		}
 	}
 
 	lastColLetter, _ := excelize.ColumnNumberToName(len(headers))
 
-	// Banner
-	_ = f.MergeCell(sheet, "A1", fmt.Sprintf("%s2", lastColLetter))
-	f.SetCellValue(sheet, "A1", fmt.Sprintf("قالب استيراد بيانات طلاب (%s) - %s", stageKey, churchName))
-	f.SetCellStyle(sheet, "A1", fmt.Sprintf("%s2", lastColLetter), s.bannerTitle)
-	f.SetRowHeight(sheet, 1, 22)
-	f.SetRowHeight(sheet, 2, 22)
+	// Row 1: Merged Banner
+	_ = f.MergeCell(sheet, "A1", fmt.Sprintf("%s1", lastColLetter))
+	f.SetCellValue(sheet, "A1", fmt.Sprintf("سجل رعاية طلاب %s - %s", sheet, churchName))
+	f.SetCellStyle(sheet, "A1", fmt.Sprintf("%s1", lastColLetter), s.bannerTitle)
+	f.SetRowHeight(sheet, 1, 30)
 
-	_ = f.MergeCell(sheet, "A3", fmt.Sprintf("%s3", lastColLetter))
-	f.SetCellValue(sheet, "A3", "💡 استخدم القوائم المنسدلة في خانة (النوع، الصف الدراسي، مسار الثانوي) لضمان دقة البيانات.")
-	f.SetCellStyle(sheet, "A3", fmt.Sprintf("%s3", lastColLetter), s.templateNote)
-	f.SetRowHeight(sheet, 3, 24)
-
-	f.SetRowHeight(sheet, 4, 10)
-	f.SetRowHeight(sheet, 5, 28)
-
+	// Row 2: Table Headers
+	f.SetRowHeight(sheet, 2, 28)
 	for i, h := range headers {
-		cell, _ := excelize.CoordinatesToCellName(i+1, 5)
+		cell, _ := excelize.CoordinatesToCellName(i+1, 2)
 		f.SetCellValue(sheet, cell, h)
-		f.SetCellStyle(sheet, cell, cell, s.tableHeaderAlt)
+		f.SetCellStyle(sheet, cell, cell, s.tableHeader)
 		colName, _ := excelize.ColumnNumberToName(i + 1)
-		f.SetColWidth(sheet, colName, colName, float64(utf8.RuneCountInString(h)+5))
+		if w, ok := colWidths[colName]; ok {
+			f.SetColWidth(sheet, colName, colName, w)
+		} else {
+			f.SetColWidth(sheet, colName, colName, float64(utf8.RuneCountInString(h)+5))
+		}
 	}
 
-	// Freeze Panes
+	// Freeze Panes below header
 	_ = f.SetPanes(sheet, &excelize.Panes{
 		Freeze:      true,
 		Split:       false,
 		XSplit:      0,
-		YSplit:      5,
-		TopLeftCell: "A6",
+		YSplit:      2,
+		TopLeftCell: "A3",
 		ActivePane:  "bottomLeft",
 	})
 
-	// Add Dropdown Data Validations
-	// 1. Stage dropdown (Column E)
-	dvStage := excelize.NewDataValidation(true)
-	dvStage.Sqref = "E6:E2000"
-	_ = dvStage.SetDropList([]string{"حضانات", "ابتدائي", "إعدادي", "ثانوي", "جامعة"})
-	_ = f.AddDataValidation(sheet, dvStage)
+	// Pre-format 15 empty rows with borders & Text format for National ID
+	for rowIdx := 3; rowIdx <= 15; rowIdx++ {
+		f.SetRowHeight(sheet, rowIdx, 22)
+		f.SetCellValue(sheet, fmt.Sprintf("A%d", rowIdx), rowIdx-2)
+		f.SetCellStyle(sheet, fmt.Sprintf("A%d", rowIdx), fmt.Sprintf("A%d", rowIdx), s.zebraWhiteCenter)
+		f.SetCellStyle(sheet, fmt.Sprintf("B%d", rowIdx), fmt.Sprintf("B%d", rowIdx), s.zebraWhiteCenter)
+		f.SetCellStyle(sheet, fmt.Sprintf("C%d", rowIdx), fmt.Sprintf("C%d", rowIdx), s.zebraWhiteRight)
+		// National ID - Col D (Text format)
+		f.SetCellStyle(sheet, fmt.Sprintf("D%d", rowIdx), fmt.Sprintf("D%d", rowIdx), s.zebraWhiteMono)
 
-	// 2. Grade dropdown (Column F)
-	if len(stageGrades) > 0 {
-		dvGrade := excelize.NewDataValidation(true)
-		dvGrade.Sqref = "F6:F2000"
-		_ = dvGrade.SetDropList(stageGrades)
-		_ = f.AddDataValidation(sheet, dvGrade)
+		for col := 5; col <= len(headers); col++ {
+			cName, _ := excelize.CoordinatesToCellName(col, rowIdx)
+			f.SetCellStyle(sheet, cName, cName, s.zebraWhiteCenter)
+		}
 	}
 
-	// 3. Secondary Track dropdown (Column I)
-	if stageKey == "ثانوي" {
+	// Add Dropdown Data Validations
+	if stageKey == "جامعة" {
+		// Study years dropdown on Column G (starts from 2 for institutes)
+		dvYears := excelize.NewDataValidation(true)
+		dvYears.Sqref = "G3:G1000"
+		_ = dvYears.SetDropList([]string{"2", "3", "4", "5", "6", "7"})
+		_ = f.AddDataValidation(sheet, dvYears)
+
+		// University grade dropdown on Column H
+		if len(stageGrades) > 0 {
+			dvGrade := excelize.NewDataValidation(true)
+			dvGrade.Sqref = "H3:H1000"
+			_ = dvGrade.SetDropList(stageGrades)
+			_ = f.AddDataValidation(sheet, dvGrade)
+		}
+	} else if stageKey == "ثانوي" {
+		// Grade dropdown on Column E
+		if len(stageGrades) > 0 {
+			dvGrade := excelize.NewDataValidation(true)
+			dvGrade.Sqref = "E3:E1000"
+			_ = dvGrade.SetDropList(stageGrades)
+			_ = f.AddDataValidation(sheet, dvGrade)
+		}
+
+		// Track dropdown on Column F
 		dvTrack := excelize.NewDataValidation(true)
-		dvTrack.Sqref = "I6:I2000"
+		dvTrack.Sqref = "F3:F1000"
 		_ = dvTrack.SetDropList([]string{"عام", "تجاري", "فني صناعي", "زراعي", "سياحة وفنادق", "خدمات", "انتظار التنسيق"})
 		_ = f.AddDataValidation(sheet, dvTrack)
+	} else {
+		// Grade dropdown on Column E
+		if len(stageGrades) > 0 {
+			dvGrade := excelize.NewDataValidation(true)
+			dvGrade.Sqref = "E3:E1000"
+			_ = dvGrade.SetDropList(stageGrades)
+			_ = f.AddDataValidation(sheet, dvGrade)
+		}
 	}
-
-	// 4. Gender dropdown (Column J)
-	dvGender := excelize.NewDataValidation(true)
-	dvGender.Sqref = "J6:J2000"
-	_ = dvGender.SetDropList([]string{"ذكر", "أنثى"})
-	_ = f.AddDataValidation(sheet, dvGender)
 
 	return nil
 }

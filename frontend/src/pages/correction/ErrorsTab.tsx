@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { useCorrectionStore, withLocalEdits } from '../../store/useCorrectionStore';
 import { inspectEgyptianNID } from '../../lib/nidInspector';
+import { matchQueryTokens } from '../../lib/normalization/arabic';
 import type { PendingImportRow, Student } from '../../types/student';
 
 interface Props {
@@ -45,14 +46,18 @@ export const ErrorsTab: React.FC<Props> = ({ rows, search }) => {
   const setFocusRow = useCorrectionStore((s) => s.setFocusRow);
 
   const filtered = useMemo(() => {
-    const s = search.trim();
-    if (!s) return rows;
-    return rows.filter(
-      (r) =>
-        r.row.student.fullName?.includes(s) ||
-        r.row.student.nationalId?.includes(s) ||
-        r.row.student.phone?.includes(s)
-    );
+    if (!search.trim()) return rows;
+    return rows.filter((r) => {
+      const s = r.row.student;
+      return matchQueryTokens(search, [
+        s.fullName,
+        s.nationalId,
+        s.phone,
+        s.parentPhone,
+        s.stage,
+        s.grade,
+      ]).matched;
+    });
   }, [rows, search]);
 
   const focused = useMemo(() => {

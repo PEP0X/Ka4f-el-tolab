@@ -225,7 +225,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onComplete }) => {
             textShadow: '0 2px 8px rgba(0,0,0,0.5)',
           }}
         >
-          كنيسة الشهيد العظيم مارجرجس والأنبا أنطونيوس — محرم بك
+          {localStorage.getItem('churchName') || 'نظام إدارة وتدقيق بيانات الطلاب'}
         </Typography>
 
         {/* Progress Bar Container */}
