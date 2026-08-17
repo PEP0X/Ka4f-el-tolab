@@ -16,7 +16,10 @@ func TestStudentRepositoryArabicSearch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("database.Open failed: %v", err)
 	}
-	defer db.Close()
+	t.Cleanup(func() {
+		_, _ = db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+		_ = db.Close()
+	})
 
 	if err := database.Migrate(db); err != nil {
 		t.Fatalf("database.Migrate failed: %v", err)

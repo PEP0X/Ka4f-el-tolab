@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/wailsapp/wails/v2 v2.13.0
+	github.com/wailsapp/wails/v2 v2.14.0
 	github.com/xuri/excelize/v2 v2.11.0
 	modernc.org/sqlite v1.56.0
 )

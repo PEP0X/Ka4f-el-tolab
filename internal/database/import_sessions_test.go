@@ -24,6 +24,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
+		_, _ = db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 		_ = db.Close()
 	})
 	return db

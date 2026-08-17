@@ -38,12 +38,14 @@ Unicode true
 VIProductVersion "${INFO_PRODUCTVERSION}.0"
 VIFileVersion    "${INFO_PRODUCTVERSION}.0"
 
-VIAddVersionKey "CompanyName"     "${INFO_COMPANYNAME}"
-VIAddVersionKey "FileDescription" "${INFO_PRODUCTNAME} Installer"
-VIAddVersionKey "ProductVersion"  "${INFO_PRODUCTVERSION}"
-VIAddVersionKey "FileVersion"     "${INFO_PRODUCTVERSION}"
-VIAddVersionKey "LegalCopyright"  "${INFO_COPYRIGHT}"
-VIAddVersionKey "ProductName"     "${INFO_PRODUCTNAME}"
+VIAddVersionKey "CompanyName"      "${INFO_COMPANYNAME}"
+VIAddVersionKey "FileDescription"  "${INFO_PRODUCTNAME} Installer"
+VIAddVersionKey "ProductVersion"   "${INFO_PRODUCTVERSION}"
+VIAddVersionKey "FileVersion"      "${INFO_PRODUCTVERSION}"
+VIAddVersionKey "LegalCopyright"   "${INFO_COPYRIGHT}"
+VIAddVersionKey "ProductName"      "${INFO_PRODUCTNAME}"
+VIAddVersionKey "OriginalFilename" "${INFO_PROJECTNAME}-installer.exe"
+VIAddVersionKey "InternalName"     "${INFO_PROJECTNAME}"
 
 # Enable HiDPI support. https://nsis.sourceforge.io/Reference/ManifestDPIAware
 ManifestDPIAware true

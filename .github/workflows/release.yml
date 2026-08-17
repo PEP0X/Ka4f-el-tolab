@@ -1,0 +1,124 @@
+name: Release & Build All Platforms
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build Windows Portable Binary
+        run: |
+          wails build -platform windows/amd64 -trimpath -ldflags "-s -w -H windowsgui" -o Ka4f-el-tolab.exe
+
+      - name: Build Windows NSIS Installer
+        run: |
+          wails build -platform windows/amd64 -trimpath -ldflags "-s -w -H windowsgui" -nsis
+        continue-on-error: true
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-binaries
+          path: |
+            build/bin/Ka4f-el-tolab.exe
+            build/bin/*installer.exe
+          if-no-files-found: warn
+
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build macOS App Bundle
+        run: |
+          wails build -platform darwin/arm64 -trimpath -ldflags "-s -w"
+
+      - name: Package macOS App
+        run: |
+          cd build/bin
+          if [ -d "Ka4f-El-Tolab.app" ]; then
+            zip -r Ka4f-El-Tolab-darwin-arm64.zip Ka4f-El-Tolab.app
+          elif [ -d "Ka4f-el-tolab.app" ]; then
+            zip -r Ka4f-El-Tolab-darwin-arm64.zip Ka4f-el-tolab.app
+          fi
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-binaries
+          path: build/bin/*.zip
+          if-no-files-found: warn
+
+  create-release:
+    name: Publish GitHub Release
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Flatten Artifacts
+        run: |
+          mkdir -p dist
+          find release-artifacts -type f -exec cp {} dist/ \;
+          ls -la dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true

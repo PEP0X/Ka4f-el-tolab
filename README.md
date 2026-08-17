@@ -6,7 +6,7 @@
   ### نظام سطح المكتب الذكي لإدارة بيانات الطلاب ومدارس الأحد والأنشطة الكنسية
   **Smart Cross-Platform Desktop Student Management & Excel Automation System**
 
-  [![Release](https://img.shields.io/badge/Release-v1.1.0-blue?style=flat&logo=github)](https://github.com/PEP0X/Ka4f-el-tolab/releases/latest)
+  [![Release](https://img.shields.io/badge/Release-v1.2.1-blue?style=flat&logo=github)](https://github.com/PEP0X/Ka4f-el-tolab/releases/latest)
   [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
   [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat&logo=react)](https://reactjs.org/)
   [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=flat&logo=typescript)](https://www.typescriptlang.org/)
@@ -62,32 +62,18 @@
 
 ---
 
-### 🌟 الإصدار الأحدث: `v1.1.0` (Latest Release)
+### 🌟 الإصدار الأحدث: `v1.2.1` (Latest Release)
 > **تاريخ الإصدار**: أغسطس 2026 | **حالة الإصدار**: مستقر (Stable)  
-> **أبرز التحديثات**: تصدير متقدم لملفات Excel مدعوم بالرسوم البيانية والإحصائيات، ترويسة وهوية كنسية احترافية قابلة للطباعة، كاش فائق السرعة للوحة التحكم، نافذة تفاعلية شاملة لبيانات الطالب، معالجة وتدقيق كامل لفرق المرحلة الجامعية.
+> **أبرز التحديثات**: معالجة تنبيهات مضادات الفيروسات (Antivirus / SmartScreen) عبر ترقية الـ Manifest وتوقيع الملفات بشهادات Authenticode، إزالة تجميد الواجهة (Anti-freeze UI Virtualization)، بحث ذكي فائق السرعة للغة العربية، شريط عنوان مخصص متوافق مع كافة المنظمات، وقوالب تصدير ذكية حسب المرحلة الدراسية.
 
 | نظام التشغيل (OS) | نوع الملف (Package Type) | المعمارية (Arch) | رابط التحميل المباشر (Direct Download) |
 | :--- | :--- | :--- | :--- |
-| 🪟 **Windows 10 / 11** | **Setup Installer (NSIS)** | 64-bit (x64) | [⬇️ تحميل مثبت ويندوز (.exe)](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.1.0/Ka4f-El-Tolab-amd64-installer.exe) |
-| 🪟 **Windows 10 / 11** | **نسخة محمولة (Portable)** | 64-bit (x64) | [⬇️ تحميل النسخة المحمولة (.exe)](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.1.0/Ka4f-el-tolab.exe) |
-| 🍏 **macOS (Apple Silicon)** | **حزمة تطبيق (App Bundle)** | ARM64 (M1/M2/M3/M4) | [⬇️ تحميل نسخة الماك (.zip)](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.1.0/Ka4f-El-Tolab-darwin-arm64.zip) |
-| 📦 **كود المصدر (Source Code)** | **Source Code Archive** | All | [⬇️ كود المصدر (.zip)](https://github.com/PEP0X/Ka4f-el-tolab/archive/refs/tags/v1.1.0.zip) |
+| 🪟 **Windows 10 / 11** | **Setup Installer (NSIS)** | 64-bit (x64) | [⬇️ تحميل مثبت ويندوز (.exe)](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.2.1/Ka4f-El-Tolab-amd64-installer.exe) |
+| 🪟 **Windows 10 / 11** | **نسخة محمولة (Portable)** | 64-bit (x64) | [⬇️ تحميل النسخة المحمولة (.exe)](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.2.1/Ka4f-el-tolab.exe) |
+| 🍏 **macOS (Apple Silicon)** | **حزمة تطبيق (App Bundle)** | ARM64 (M1/M2/M3/M4) | [⬇️ تحميل نسخة الماك (.zip)](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.2.1/Ka4f-El-Tolab-darwin-arm64.zip) |
+| 📦 **كود المصدر (Source Code)** | **Source Code Archive** | All | [⬇️ كود المصدر (.zip)](https://github.com/PEP0X/Ka4f-el-tolab/archive/refs/tags/v1.2.1.zip) |
 
-🔗 [عرض تفاصيل وسجل تغييرات إصدار v1.1.0 الكاملة على GitHub ↗](https://github.com/PEP0X/Ka4f-el-tolab/releases/tag/v1.1.0)
-
----
-
-### 📦 الإصدار السابق: `v1.0.0` (Initial Release)
-> **تاريخ الإصدار**: أغسطس 2026 | **حالة الإصدار**: أرشيف (Archived)  
-> **أبرز المزايا**: التدشين الأولي لمحرك الرقم القومي المصري، مستورد Excel بدون كتابة مسبقة (Zero-Write Preview)، ومساحة عمل تفاعلية بـ 4 تبويبات لمعالجة الأخطاء والتكرارات، وقاعدة بيانات SQLite مدمجة CGO-Free.
-
-| نظام التشغيل (OS) | نوع الملف (Package Type) | المعمارية (Arch) | رابط التحميل المباشر (Direct Download) |
-| :--- | :--- | :--- | :--- |
-| 🪟 **Windows 10 / 11** | **Setup Installer (NSIS)** | 64-bit (x64) | [⬇️ تحميل مثبت ويندوز (.exe)](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.0.0/Ka4f-El-Tolab-amd64-installer.exe) |
-| 🪟 **Windows 10 / 11** | **نسخة محمولة (Portable)** | 64-bit (x64) | [⬇️ تحميل النسخة المحمولة (.exe)](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.0.0/Ka4f-el-tolab.exe) |
-| 📦 **كود المصدر (Source Code)** | **Source Code Archive** | All | [⬇️ كود المصدر (.zip)](https://github.com/PEP0X/Ka4f-el-tolab/archive/refs/tags/v1.0.0.zip) |
-
-🔗 [عرض تفاصيل وسجل تغييرات إصدار v1.0.0 على GitHub ↗](https://github.com/PEP0X/Ka4f-el-tolab/releases/tag/v1.0.0)
+🔗 [عرض تفاصيل وسجل تغييرات إصدار v1.2.1 الكاملة على GitHub ↗](https://github.com/PEP0X/Ka4f-el-tolab/releases/tag/v1.2.1)
 
 ---
 
@@ -95,8 +81,18 @@
 
 | الإصدار (Version) | الحالة (Status) | تاريخ الصدور (Date) | أهم الإضافات (Key Features) | روابط التحميل (Downloads) |
 | :--- | :---: | :---: | :--- | :--- |
-| [**v1.1.0**](https://github.com/PEP0X/Ka4f-el-tolab/releases/tag/v1.1.0) | 🟢 **الأحدث (Latest)** | 2026-08 | رسوم بيانية في التصدير، كاش للوحة التحكم، نافذة تفاصيل الطالب، معالجة فرق الجامعة | [EXE Installer](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.1.0/Ka4f-El-Tolab-amd64-installer.exe) \| [Portable](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.1.0/Ka4f-el-tolab.exe) \| [macOS](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.1.0/Ka4f-El-Tolab-darwin-arm64.zip) |
-| [**v1.0.0**](https://github.com/PEP0X/Ka4f-el-tolab/releases/tag/v1.0.0) | ⚪ مستقر (Stable) | 2026-08 | الإطلاق الأولي، محرك الرقم القومي، مساحة تصحيح Excel، قاعدة بيانات SQLite WAL | [EXE Installer](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.0.0/Ka4f-El-Tolab-amd64-installer.exe) \| [Portable](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.0.0/Ka4f-el-tolab.exe) |
+| [**v1.2.1**](https://github.com/PEP0X/Ka4f-el-tolab/releases/tag/v1.2.1) | 🟢 **الأحدث (Latest)** | 2026-08 | معالجة تنبيهات مضاد الفيروسات، أداء فائق، بحث عربي ذكي، شريط عنوان مخصص | [EXE Installer](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.2.1/Ka4f-El-Tolab-amd64-installer.exe) \| [Portable](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.2.1/Ka4f-el-tolab.exe) \| [macOS](https://github.com/PEP0X/Ka4f-el-tolab/releases/download/v1.2.1/Ka4f-El-Tolab-darwin-arm64.zip) |
+| [**v1.2.0**](https://github.com/PEP0X/Ka4f-el-tolab/releases/tag/v1.2.0) | ⚪ مستقر (Stable) | 2026-08 | تحسين الأداء ومساحة المراجعة، وتحديث محرك قوالب Excel | [Releases Archive](https://github.com/PEP0X/Ka4f-el-tolab/releases/tag/v1.2.0) |
+| [**v1.1.0**](https://github.com/PEP0X/Ka4f-el-tolab/releases/tag/v1.1.0) | ⚪ مستقر (Stable) | 2026-08 | رسوم بيانية في التصدير، كاش للوحة التحكم، نافذة تفاصيل الطالب، معالجة فرق الجامعة | [Releases Archive](https://github.com/PEP0X/Ka4f-el-tolab/releases/tag/v1.1.0) |
+| [**v1.0.0**](https://github.com/PEP0X/Ka4f-el-tolab/releases/tag/v1.0.0) | ⚪ مستقر (Stable) | 2026-08 | الإطلاق الأولي، محرك الرقم القومي، مساحة تصحيح Excel، قاعدة بيانات SQLite WAL | [Releases Archive](https://github.com/PEP0X/Ka4f-el-tolab/releases/tag/v1.0.0) |
+
+---
+
+### 🛡️ ملاحظة هامة حول مضادات الفيروسات و Windows SmartScreen
+> [!NOTE]
+> التطبيق مفتوح المصدر وآمن 100%. نظراً لكونه مبنياً بلغة Go وبدون شهادة تجارية مدفوعة، قد تظهر شاشة **Windows SmartScreen** (`Windows protected your PC`) عند الفتح لأول مرة.
+> - **الحل السريع**: اضغط على **More info (المزيد من المعلومات)** ⬅️ ثم **Run anyway (تشغيل على أي حال)**.
+> - لمزيد من التفاصيل والحلول للمطورين، راجع: [**دليل الأمان ومضادات الفيروسات (SECURITY_AND_ANTIVIRUS.md)**](SECURITY_AND_ANTIVIRUS.md).
 
 ---
 
