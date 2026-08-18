@@ -42,6 +42,29 @@ jobs:
           wails build -platform windows/amd64 -trimpath -ldflags "-s -w -H windowsgui" -nsis
         continue-on-error: true
 
+      - name: Sign Binaries and Package Windows Bundle
+        shell: pwsh
+        run: |
+          Write-Host "Creating Code Signing Certificate for Ka4f El Tolab..."
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Ka4f El Tolab (Abanoub Nashaat), O=Ka4f El Tolab, C=EG" -CertStoreLocation "Cert:\CurrentUser\My" -NotAfter (Get-Date).AddYears(5) -HashAlgorithm SHA256
+          
+          # Export public .cer
+          Export-Certificate -Cert $cert -FilePath "build/bin/Ka4f-el-tolab-certificate.cer"
+          
+          # Sign all built .exe files
+          Get-ChildItem -Path "build/bin" -Filter "*.exe" | ForEach-Object {
+            Write-Host "Signing $($_.FullName)..."
+            Set-AuthenticodeSignature -Certificate $cert -FilePath $_.FullName -HashAlgorithm SHA256
+          }
+          
+          # Copy trust helper script and docs
+          Copy-Item "scripts/trust-app.ps1" -Destination "build/bin/trust-app.ps1"
+          Copy-Item "SECURITY_AND_ANTIVIRUS.md" -Destination "build/bin/SECURITY_AND_ANTIVIRUS.md"
+          
+          # Create Windows ZIP bundle
+          $zipName = "build/bin/Ka4f-El-Tolab-Windows.zip"
+          Compress-Archive -Path "build/bin/Ka4f-el-tolab.exe", "build/bin/Ka4f-el-tolab-certificate.cer", "build/bin/trust-app.ps1", "build/bin/SECURITY_AND_ANTIVIRUS.md" -DestinationPath $zipName -Force
+
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -49,6 +72,9 @@ jobs:
           path: |
             build/bin/Ka4f-el-tolab.exe
             build/bin/*installer.exe
+            build/bin/*.zip
+            build/bin/*.cer
+            build/bin/trust-app.ps1
           if-no-files-found: warn
 
   build-macos:
