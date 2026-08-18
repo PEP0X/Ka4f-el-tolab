@@ -86,6 +86,7 @@ func PreviewFile(filePath string) (models.ImportPreview, error) {
 
 type columnIndices struct {
 	fullName            int
+	familyHead          int
 	nationalID          int
 	grade               int
 	track               int
@@ -107,7 +108,7 @@ type columnIndices struct {
 
 func parseHeaderIndices(headers []string, stage string) columnIndices {
 	ci := columnIndices{
-		fullName: -1, nationalID: -1, grade: -1, track: -1, schoolName: -1,
+		fullName: -1, familyHead: -1, nationalID: -1, grade: -1, track: -1, schoolName: -1,
 		universityName: -1, faculty: -1, studyYears: -1, universityYear: -1,
 		phone: -1, parentPhone: -1, address: -1, churchFamilyID: -1,
 		cathedralStudentID: -1, cathedralFamilyID: -1, alexandriaStudentID: -1, alexandriaFamilyID: -1, notes: -1,
@@ -117,7 +118,11 @@ func parseHeaderIndices(headers []string, stage string) columnIndices {
 		norm := normalizeArabic(h)
 		clean := strings.ToLower(norm)
 
-		if strings.Contains(clean, "اسم الطالب") || strings.Contains(clean, "أسم الطالب") || (strings.Contains(clean, "الاسم") && !strings.Contains(clean, "رب") && !strings.Contains(clean, "مدرسة") && !strings.Contains(clean, "جامعة") && !strings.Contains(clean, "كلية") && !strings.Contains(clean, "اسرة") && !strings.Contains(clean, "أسرة")) {
+		if strings.Contains(clean, "رب الاسرة") || strings.Contains(clean, "رب الأسرة") || strings.Contains(clean, "العائل") || (strings.Contains(clean, "ولي الامر") && !strings.Contains(clean, "هاتف") && !strings.Contains(clean, "تليفون") && !strings.Contains(clean, "موبايل") && !strings.Contains(clean, "رقم")) {
+			if ci.familyHead == -1 {
+				ci.familyHead = i
+			}
+		} else if strings.Contains(clean, "اسم الطالب") || strings.Contains(clean, "أسم الطالب") || (strings.Contains(clean, "الاسم") && !strings.Contains(clean, "رب") && !strings.Contains(clean, "مدرسة") && !strings.Contains(clean, "جامعة") && !strings.Contains(clean, "كلية") && !strings.Contains(clean, "اسرة") && !strings.Contains(clean, "أسرة") && !strings.Contains(clean, "عائل")) {
 			if ci.fullName == -1 {
 				ci.fullName = i
 			}
@@ -167,7 +172,7 @@ func parseHeaderIndices(headers []string, stage string) columnIndices {
 			if ci.address == -1 {
 				ci.address = i
 			}
-		} else if strings.Contains(clean, "كشوفات الكنيسة") || strings.Contains(clean, "اسرة الكنيسة") || strings.Contains(clean, "اسرة كنيسة") || strings.Contains(clean, "أسرة الكنيسة") {
+		} else if strings.Contains(clean, "كشوفات الكنيسة") || strings.Contains(clean, "اسرة الكنيسة") || strings.Contains(clean, "اسرة كنيسة") || strings.Contains(clean, "أسرة الكنيسة") || strings.Contains(clean, "كشوفات") {
 			if ci.churchFamilyID == -1 {
 				ci.churchFamilyID = i
 			}
@@ -200,54 +205,6 @@ func parseHeaderIndices(headers []string, stage string) columnIndices {
 	}
 	if ci.nationalID == -1 {
 		ci.nationalID = 3
-	}
-	if stage == "جامعة" {
-		if ci.universityName == -1 {
-			ci.universityName = 4
-		}
-		if ci.faculty == -1 {
-			ci.faculty = 5
-		}
-		if ci.studyYears == -1 {
-			ci.studyYears = 6
-		}
-		if ci.universityYear == -1 {
-			ci.universityYear = 7
-		}
-		if ci.cathedralStudentID == -1 {
-			ci.cathedralStudentID = 8
-		}
-		if ci.cathedralFamilyID == -1 {
-			ci.cathedralFamilyID = 9
-		}
-		if ci.alexandriaStudentID == -1 {
-			ci.alexandriaStudentID = 10
-		}
-		if ci.alexandriaFamilyID == -1 {
-			ci.alexandriaFamilyID = 11
-		}
-		if ci.notes == -1 {
-			ci.notes = 12
-		}
-	} else {
-		if ci.grade == -1 {
-			ci.grade = 4
-		}
-		if ci.cathedralStudentID == -1 {
-			ci.cathedralStudentID = 5
-		}
-		if ci.cathedralFamilyID == -1 {
-			ci.cathedralFamilyID = 6
-		}
-		if ci.alexandriaStudentID == -1 {
-			ci.alexandriaStudentID = 7
-		}
-		if ci.alexandriaFamilyID == -1 {
-			ci.alexandriaFamilyID = 8
-		}
-		if ci.notes == -1 {
-			ci.notes = 9
-		}
 	}
 
 	return ci
@@ -307,6 +264,7 @@ func studentForRow(row []string, stage string, ci columnIndices) (models.Student
 
 	s := models.Student{
 		FullName:            cleanText(name),
+		FamilyHead:          cleanText(cell(ci.familyHead)),
 		NationalID:          cell(ci.nationalID),
 		Stage:               stage,
 		SchoolName:          cell(ci.schoolName),
@@ -340,12 +298,16 @@ func studentForRow(row []string, stage string, ci columnIndices) (models.Student
 func NormalizeReviewedStudent(student models.Student) (models.Student, error) {
 	student.FullName = cleanText(student.FullName)
 	if student.FullName == "" {
-		return student, fmt.Errorf("اسم الطالب مطلوب")
+		return student, fmt.Errorf("أسم الطالب الرباعي مطلوب")
 	}
+	student.FamilyHead = cleanText(student.FamilyHead)
 	if !isNationalIDDigits(student.NationalID) {
 		return student, fmt.Errorf("الرقم القومي يجب أن يحتوي على أرقام فقط")
 	}
 	student.NationalID = nid.NormalizeID(student.NationalID)
+	if len(student.NationalID) != 14 {
+		return student, fmt.Errorf("الرقم القومي يجب أن يتكون من 14 رقماً")
+	}
 	if student.Stage == "" {
 		return student, fmt.Errorf("المرحلة التعليمية مطلوبة")
 	}
@@ -370,8 +332,9 @@ func NormalizeReviewedStudent(student models.Student) (models.Student, error) {
 			student.Track = res.Track
 		}
 	}
-	student.FamilyHead = cleanText(student.FamilyHead)
 	student.SchoolName = cleanText(student.SchoolName)
+	student.UniversityName = cleanText(student.UniversityName)
+	student.Faculty = cleanText(student.Faculty)
 	student.Phone = cleanText(student.Phone)
 	student.ParentPhone = cleanText(student.ParentPhone)
 	student.Address = cleanText(student.Address)
@@ -388,7 +351,10 @@ func NormalizeReviewedStudent(student models.Student) (models.Student, error) {
 func validateRow(student models.Student, rawGrade, sheet string, rowNumber int) models.ImportRow {
 	row := models.ImportRow{ID: uuid.NewString(), Sheet: sheet, RowNumber: rowNumber, Student: student, Status: rowReady, Issues: []models.ImportIssue{}}
 	if student.FullName == "" {
-		addIssue(&row, "error", "الاسم", "اسم الطالب مطلوب")
+		addIssue(&row, "error", "الاسم", "أسم الطالب الرباعي مطلوب")
+	}
+	if student.FamilyHead == "" {
+		addIssue(&row, "review", "اسم رب الأسرة", "اسم رب الأسرة فارغ (مطلوب)")
 	}
 	if !isNationalIDDigits(student.NationalID) {
 		addIssue(&row, "error", "الرقم القومي", "الرقم القومي يجب أن يحتوي على أرقام فقط")
@@ -423,6 +389,27 @@ func validateRow(student models.Student, rawGrade, sheet string, rowNumber int) 
 		}
 		addIssue(&row, "review", "الصف الدراسي", message)
 	}
+
+	if student.Stage == "جامعة" {
+		if student.UniversityName == "" && student.SchoolName == "" {
+			addIssue(&row, "review", "الجامعة", "اسم الجامعة أو المعهد فارغ")
+		}
+	} else {
+		if student.SchoolName == "" {
+			addIssue(&row, "review", "المدرسة", "اسم المدرسة فارغ")
+		}
+	}
+
+	if student.ParentPhone == "" {
+		addIssue(&row, "review", "هاتف ولي الأمر", "هاتف ولي الأمر فارغ (مطلوب)")
+	}
+	if student.ChurchFamilyID == "" {
+		addIssue(&row, "review", "رقم الأسرة بكشوفات الكنيسة", "رقم الأسرة بكشوفات الكنيسة فارغ (مطلوب)")
+	}
+	if student.CathedralFamilyID == "" {
+		addIssue(&row, "review", "رقم الأسرة بالرعاية", "رقم الأسرة في برنامج الرعاية الكنسية فارغ (مطلوب)")
+	}
+
 	return row
 }
 

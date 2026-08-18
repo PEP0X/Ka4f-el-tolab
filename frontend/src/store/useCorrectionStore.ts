@@ -80,7 +80,10 @@ interface CorrectionState {
   bulkApplyUpdates: () => Promise<number>;
   bulkFixCenturyErrors: () => Promise<number>;
   bulkCleanPhoneNumbers: () => Promise<number>;
-  bulkResolveSelected: (ids: string[], gradeOverride?: string, stageOverride?: string) => Promise<number>;
+  bulkCleanAndFormatNIDs: () => Promise<number>;
+  bulkSeparateAllFuzzy: () => Promise<number>;
+  bulkResolveAllValidErrors: () => Promise<number>;
+  bulkResolveSelected: (ids: string[], gradeOverride?: string, stageOverride?: string, extraOverrides?: Partial<Student>) => Promise<number>;
   ignoreRow: (id: string) => Promise<void>;
 
   /** Live validation through Go. */
@@ -290,13 +293,13 @@ export const useCorrectionStore = create<CorrectionState>((set, get) => ({
   },
 
   bulkFixCenturyErrors: async () => {
-    const errorRows = get().rows.filter((r) => r.issueType === 'error');
-    if (!errorRows.length) return 0;
+    const candidateRows = get().rows.filter((r) => r.issueType === 'error' || r.issueType === 'needs_review');
+    if (!candidateRows.length) return 0;
 
     set({ isBulkResolving: true });
     let fixed = 0;
     try {
-      for (const r of errorRows) {
+      for (const r of candidateRows) {
         const s = withLocalEdits(r).row.student;
         const hud = inspectEgyptianNID(s.nationalId, s.stage);
         if (hud.suggestedId) {
@@ -332,7 +335,83 @@ export const useCorrectionStore = create<CorrectionState>((set, get) => ({
     return modified;
   },
 
-  bulkResolveSelected: async (ids: string[], gradeOverride?: string, stageOverride?: string) => {
+  bulkCleanAndFormatNIDs: async () => {
+    const rows = get().rows;
+    let modified = 0;
+    for (const r of rows) {
+      const s = withLocalEdits(r).row.student;
+      if (!s.nationalId) continue;
+      // Convert Arabic digits and strip non-digits
+      const eastern = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+      let clean = s.nationalId;
+      for (let i = 0; i < 10; i++) {
+        clean = clean.split(eastern[i]).join(String(i));
+      }
+      clean = clean.replace(/[^\d]/g, '').trim();
+      if (clean !== s.nationalId) {
+        get().editRow(r.id, { nationalId: clean });
+        modified++;
+      }
+    }
+    return modified;
+  },
+
+  bulkSeparateAllFuzzy: async () => {
+    const fuzzyRows = get().rows.filter((r) => r.issueType === 'fuzzy_name_match');
+    if (!fuzzyRows.length) return 0;
+
+    set({ isBulkResolving: true });
+    let count = 0;
+    try {
+      for (const r of fuzzyRows) {
+        const s = withLocalEdits(r).row.student;
+        await get().resolveRow(r.id, s);
+        count++;
+      }
+    } finally {
+      set({ isBulkResolving: false });
+    }
+    return count;
+  },
+
+  bulkResolveAllValidErrors: async () => {
+    const errorRows = get().rows.filter((r) => r.issueType === 'error');
+    const validRows = errorRows.filter((r) => {
+      const s = withLocalEdits(r).row.student;
+      const hud = inspectEgyptianNID(s.nationalId, s.stage);
+      return hud.valid && Boolean(s.fullName?.trim());
+    });
+
+    if (!validRows.length) return 0;
+
+    set({ isBulkResolving: true });
+    let count = 0;
+    try {
+      for (const r of validRows) {
+        const s = withLocalEdits(r).row.student;
+        const hud = inspectEgyptianNID(s.nationalId, s.stage);
+        const updated: Student = {
+          ...s,
+          nationalId: hud.clean || s.nationalId,
+          birthDate: hud.birthDate || s.birthDate,
+          gender: hud.gender || s.gender,
+          governorate: hud.governorate || s.governorate,
+        };
+        await get().resolveRow(r.id, updated);
+        count++;
+      }
+    } finally {
+      set({ isBulkResolving: false });
+    }
+    return count;
+  },
+
+  bulkResolveSelected: async (
+    ids: string[],
+    gradeOverride?: string,
+    stageOverride?: string,
+    extraOverrides?: Partial<Student>
+  ) => {
     if (!ids.length) return 0;
     set({ isBulkResolving: true });
     let count = 0;
@@ -345,6 +424,7 @@ export const useCorrectionStore = create<CorrectionState>((set, get) => ({
           ...s,
           ...(gradeOverride ? { grade: gradeOverride } : {}),
           ...(stageOverride ? { stage: stageOverride as any } : {}),
+          ...(extraOverrides || {}),
         };
         await get().resolveRow(id, updated);
         count++;

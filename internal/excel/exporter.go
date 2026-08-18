@@ -630,9 +630,9 @@ func buildStageRosterSheet(f *excelize.File, sheet string, stageKey string, stud
 
 	headers := []string{
 		"م",
-		"الاسم الكامل للابن / الابنة",
+		"أسم الطالب الرباعي",
 		"اسم رب الأسرة",
-		"الرقم القومي (14 رقم)",
+		"الرقم القومي (14 رقماً)",
 		"المرحلة التعليمية",
 		"الصف / الفرقة الدراسية",
 		"اسم المدرسة / الكلية",
@@ -641,16 +641,16 @@ func buildStageRosterSheet(f *excelize.File, sheet string, stageKey string, stud
 		"النوع",
 		"تاريخ الميلاد",
 		"المحافظة",
-		"رقم تليفون الطالب",
 		"هاتف ولي الأمر",
+		"رقم تليفون الطالب",
 		"العنوان بالتفصيل",
 		"رقم الأسرة بكشوفات الكنيسة",
-		"رقم الطالب بالرعاية",
-		"رقم الأسرة بالرعاية",
-		"رقم الطالب بالعضوية",
-		"رقم الأسرة بالعضوية",
+		"رقم الطالب في برنامج الرعاية",
+		"رقم الأسرة في برنامج الرعاية",
+		"رقم الطالب بالعضوية الكنسية",
+		"رقم الأسرة بالعضوية الكنسية",
 		"صورة الطالب",
-		"ملاحظات",
+		"ملاحظات إضافية",
 	}
 
 	lastColLetter, _ := excelize.ColumnNumberToName(len(headers))
@@ -755,8 +755,8 @@ func buildStageRosterSheet(f *excelize.File, sheet string, stageKey string, stud
 			{st.Gender, centerStyle},
 			{st.BirthDate, centerStyle},
 			{st.Governorate, centerStyle},
-			{st.Phone, monoStyle},
 			{st.ParentPhone, monoStyle},
+			{st.Phone, monoStyle},
 			{st.Address, rightStyle},
 			{st.ChurchFamilyID, monoStyle},
 			{st.CathedralStudentID, monoStyle},
@@ -824,11 +824,11 @@ func buildTemplateGuideSheet(f *excelize.File, sheet string, s *exportStyles, ch
 
 	guideRules := [][]string{
 		{"1. هيكل الشيتات", "يحتوي الملف على شيت خاص بكل مرحلة تعليمية (حضانات، ابتدائي، إعدادي، ثانوي، جامعة). يمكنك تعبئة أي شيت ثم استيراده مباشرة للتطبيق."},
-		{"2. الرقم القومي (إجباري)", "يجب إدخال الرقم القومي المكون من 14 رقماً بدقة. التطبيق يقوم تلقائياً باستخراج تاريخ الميلاد والنوع والمحافظة والتحقق من صحته."},
-		{"3. الاسم الرباعي (إجباري)", "يرجى كتابة الاسم الكامل رباعياً أو ثلاثياً بدون اختصارات."},
-		{"4. القوائم المنسدلة (Dropdown)", "تحتوي الأعمدة الرئيسية (النوع، الصف الدراسي، مسار الثانوي، الفرقة الجامعية) على قوائم منسدلة لتسهيل الاختيار وضمان مطابقة النظام."},
-		{"5. مرحلة الجامعة", "بالنسبة للطلاب المتخرجين، اختر من القائمة المنسدلة 'متخرج'. يمكنك كتابة اسم الجامعة والكلية وعدد سنين الدراسة."},
-		{"6. أرقام الكنيسة والكاتدرائية", "أرقام الكاتدرائية والعضوية الكنسية هامة لمزامنة البيانات وربط الأسر."},
+		{"2. البيانات الإجبارية", "الحقول الإجبارية هي: أسم الطالب الرباعي، اسم رب الأسرة، الرقم القومي (14 رقماً)، الصف الدراسي، اسم المدرسة/الجامعة، هاتف ولي الأمر، رقم الأسرة بكشوفات الكنيسة، ورقم الأسرة في برنامج الرعاية الكنسية."},
+		{"3. البيانات الاختيارية", "الحقول الاختيارية هي: رقم تليفون الطالب، العنوان، رقم الطالب في برنامج الرعاية، أرقام العضوية الكنسية (للطالب والأسرة)، الملاحظات الإضافية، وصورة الطالب."},
+		{"4. الرقم القومي (14 رقماً)", "يجب إدخال الرقم القومي المكون من 14 رقماً بدقة. يقوم التطبيق تلقائياً باستخراج تاريخ الميلاد والنوع والمحافظة والتحقق من صحته."},
+		{"5. القوائم المنسدلة (Dropdown)", "تحتوي الأعمدة الرئيسية (الصف الدراسي، مسار الثانوي، الفرقة الجامعية، مدة الدراسة) على قوائم منسدلة لتسهيل الاختيار وضمان مطابقة النظام."},
+		{"6. مرحلة الجامعة", "بالنسبة للطلاب المتخرجين، اختر من القائمة المنسدلة 'متخرج'. يمكنك كتابة اسم الجامعة والكلية وعدد سنين الدراسة."},
 	}
 
 	for i, rule := range guideRules {
@@ -853,74 +853,77 @@ func buildStageTemplateSheet(f *excelize.File, sheet string, stageKey string, st
 	if stageKey == "جامعة" {
 		headers = []string{
 			"م",
-			"صورة الطالب",
-			"أسم الطالب *",
-			"الرقم القومى *",
-			"الجامعة / المعهد *",
-			"الكلية / التخصص *",
-			"عدد سنين الدراسة",
-			"الفرقة الدراسية / الحالة *",
-			"هاتف ولي الأمر (اختياري)",
+			"صورة الطالب (اختياري)",
+			"أسم الطالب الرباعي (اجباري)",
+			"اسم رب الأسرة (اجباري)",
+			"الرقم القومي (14 رقماً) (اجباري)",
+			"الجامعة / المعهد (اجباري)",
+			"الكلية / التخصص (اجباري)",
+			"الفرقة الدراسية / الحالة (اجباري)",
+			"عدد سنين الدراسة (اختياري)",
+			"هاتف ولي الأمر (اجباري)",
 			"رقم تليفون الطالب (اختياري)",
-			"العنوان بالتفصيل (اختياري)",
-			"رقم الأسرة بكشوفات الكنيسة (اختياري)",
-			"رقم الطالب - الرعاية الكاتدرائية",
-			"رقم الاسرة - الرعاية الكاتدرائية",
-			"رقم الطالب - العضوية الإسكندرية",
-			"رقم الاسرة - العضوية الإسكندرية",
-			"ملاحظات",
+			"العنوان (اختياري)",
+			"رقم الأسرة بكشوفات الكنيسة (اجباري)",
+			"رقم الطالب في برنامج الرعاية الكنسية (اختياري)",
+			"رقم الأسرة في برنامج الرعاية الكنسية (اجباري)",
+			"رقم الطالب بالعضوية الكنسية (اختياري)",
+			"رقم الأسرة بالعضوية الكنسية (اختياري)",
+			"ملاحظات إضافية (اختياري)",
 		}
 		colWidths = map[string]float64{
-			"A": 6, "B": 14, "C": 30, "D": 22, "E": 26, "F": 26,
-			"G": 18, "H": 26, "I": 24, "J": 24, "K": 32, "L": 26,
-			"M": 24, "N": 24, "O": 24, "P": 24, "Q": 30,
+			"A": 6, "B": 16, "C": 30, "D": 26, "E": 24, "F": 26, "G": 26,
+			"H": 26, "I": 20, "J": 24, "K": 24, "L": 30, "M": 26,
+			"N": 26, "O": 26, "P": 24, "Q": 24, "R": 30,
 		}
 	} else if stageKey == "ثانوي" {
 		headers = []string{
 			"م",
-			"صورة الطالب",
-			"أسم الطالب *",
-			"الرقم القومى *",
-			"السنة الدراسية *",
-			"نوع / مسار الثانوية *",
-			"اسم المدرسة (اختياري)",
-			"هاتف ولي الأمر (اختياري)",
+			"صورة الطالب (اختياري)",
+			"أسم الطالب الرباعي (اجباري)",
+			"اسم رب الأسرة (اجباري)",
+			"الرقم القومي (14 رقماً) (اجباري)",
+			"الصف الدراسي الحالي (اجباري)",
+			"نوع / مسار الثانوية (اجباري)",
+			"اسم المدرسة (اجباري)",
+			"هاتف ولي الأمر (اجباري)",
 			"رقم تليفون الطالب (اختياري)",
-			"العنوان بالتفصيل (اختياري)",
-			"رقم الأسرة بكشوفات الكنيسة (اختياري)",
-			"رقم الطالب - الرعاية الكاتدرائية",
-			"رقم الاسرة - الرعاية الكاتدرائية",
-			"رقم الطالب - العضوية الإسكندرية",
-			"رقم الاسرة - العضوية الإسكندرية",
-			"ملاحظات",
+			"العنوان (اختياري)",
+			"رقم الأسرة بكشوفات الكنيسة (اجباري)",
+			"رقم الطالب في برنامج الرعاية الكنسية (اختياري)",
+			"رقم الأسرة في برنامج الرعاية الكنسية (اجباري)",
+			"رقم الطالب بالعضوية الكنسية (اختياري)",
+			"رقم الأسرة بالعضوية الكنسية (اختياري)",
+			"ملاحظات إضافية (اختياري)",
 		}
 		colWidths = map[string]float64{
-			"A": 6, "B": 14, "C": 30, "D": 22, "E": 24, "F": 24,
-			"G": 26, "H": 24, "I": 24, "J": 32, "K": 26,
-			"L": 24, "M": 24, "N": 24, "O": 24, "P": 30,
+			"A": 6, "B": 16, "C": 30, "D": 26, "E": 24, "F": 24, "G": 24,
+			"H": 26, "I": 24, "J": 24, "K": 30, "L": 26, "M": 26,
+			"N": 26, "O": 24, "P": 24, "Q": 30,
 		}
 	} else {
 		headers = []string{
 			"م",
-			"صورة الطالب",
-			"أسم الطالب *",
-			"الرقم القومى *",
-			"السنة الدراسية *",
-			"اسم المدرسة (اختياري)",
-			"هاتف ولي الأمر (اختياري)",
+			"صورة الطالب (اختياري)",
+			"أسم الطالب الرباعي (اجباري)",
+			"اسم رب الأسرة (اجباري)",
+			"الرقم القومي (14 رقماً) (اجباري)",
+			"الصف الدراسي الحالي (اجباري)",
+			"اسم المدرسة (اجباري)",
+			"هاتف ولي الأمر (اجباري)",
 			"رقم تليفون الطالب (اختياري)",
-			"العنوان بالتفصيل (اختياري)",
-			"رقم الأسرة بكشوفات الكنيسة (اختياري)",
-			"رقم الطالب - الرعاية الكاتدرائية",
-			"رقم الاسرة - الرعاية الكاتدرائية",
-			"رقم الطالب - العضوية الإسكندرية",
-			"رقم الاسرة - العضوية الإسكندرية",
-			"ملاحظات",
+			"العنوان (اختياري)",
+			"رقم الأسرة بكشوفات الكنيسة (اجباري)",
+			"رقم الطالب في برنامج الرعاية الكنسية (اختياري)",
+			"رقم الأسرة في برنامج الرعاية الكنسية (اجباري)",
+			"رقم الطالب بالعضوية الكنسية (اختياري)",
+			"رقم الأسرة بالعضوية الكنسية (اختياري)",
+			"ملاحظات إضافية (اختياري)",
 		}
 		colWidths = map[string]float64{
-			"A": 6, "B": 14, "C": 30, "D": 22, "E": 24,
-			"F": 26, "G": 24, "H": 24, "I": 32, "J": 26,
-			"K": 24, "L": 24, "M": 24, "N": 24, "O": 30,
+			"A": 6, "B": 16, "C": 30, "D": 26, "E": 24, "F": 24,
+			"G": 26, "H": 24, "I": 24, "J": 30, "K": 26, "L": 26,
+			"M": 26, "N": 24, "O": 24, "P": 30,
 		}
 	}
 
@@ -956,17 +959,18 @@ func buildStageTemplateSheet(f *excelize.File, sheet string, stageKey string, st
 		ActivePane:  "bottomLeft",
 	})
 
-	// Pre-format 15 empty rows with borders & Text format for National ID
+	// Pre-format 15 empty rows with borders & Text format for National ID (Col E)
 	for rowIdx := 3; rowIdx <= 15; rowIdx++ {
 		f.SetRowHeight(sheet, rowIdx, 22)
 		f.SetCellValue(sheet, fmt.Sprintf("A%d", rowIdx), rowIdx-2)
 		f.SetCellStyle(sheet, fmt.Sprintf("A%d", rowIdx), fmt.Sprintf("A%d", rowIdx), s.zebraWhiteCenter)
 		f.SetCellStyle(sheet, fmt.Sprintf("B%d", rowIdx), fmt.Sprintf("B%d", rowIdx), s.zebraWhiteCenter)
 		f.SetCellStyle(sheet, fmt.Sprintf("C%d", rowIdx), fmt.Sprintf("C%d", rowIdx), s.zebraWhiteRight)
-		// National ID - Col D (Text format)
-		f.SetCellStyle(sheet, fmt.Sprintf("D%d", rowIdx), fmt.Sprintf("D%d", rowIdx), s.zebraWhiteMono)
+		f.SetCellStyle(sheet, fmt.Sprintf("D%d", rowIdx), fmt.Sprintf("D%d", rowIdx), s.zebraWhiteRight)
+		// National ID - Col E (Text format)
+		f.SetCellStyle(sheet, fmt.Sprintf("E%d", rowIdx), fmt.Sprintf("E%d", rowIdx), s.zebraWhiteMono)
 
-		for col := 5; col <= len(headers); col++ {
+		for col := 6; col <= len(headers); col++ {
 			cName, _ := excelize.CoordinatesToCellName(col, rowIdx)
 			f.SetCellStyle(sheet, cName, cName, s.zebraWhiteCenter)
 		}
@@ -974,12 +978,6 @@ func buildStageTemplateSheet(f *excelize.File, sheet string, stageKey string, st
 
 	// Add Dropdown Data Validations
 	if stageKey == "جامعة" {
-		// Study years dropdown on Column G (starts from 2 for institutes)
-		dvYears := excelize.NewDataValidation(true)
-		dvYears.Sqref = "G3:G1000"
-		_ = dvYears.SetDropList([]string{"2", "3", "4", "5", "6", "7"})
-		_ = f.AddDataValidation(sheet, dvYears)
-
 		// University grade dropdown on Column H
 		if len(stageGrades) > 0 {
 			dvGrade := excelize.NewDataValidation(true)
@@ -987,25 +985,31 @@ func buildStageTemplateSheet(f *excelize.File, sheet string, stageKey string, st
 			_ = dvGrade.SetDropList(stageGrades)
 			_ = f.AddDataValidation(sheet, dvGrade)
 		}
+
+		// Study years dropdown on Column I
+		dvYears := excelize.NewDataValidation(true)
+		dvYears.Sqref = "I3:I1000"
+		_ = dvYears.SetDropList([]string{"2", "3", "4", "5", "6", "7"})
+		_ = f.AddDataValidation(sheet, dvYears)
 	} else if stageKey == "ثانوي" {
-		// Grade dropdown on Column E
+		// Grade dropdown on Column F
 		if len(stageGrades) > 0 {
 			dvGrade := excelize.NewDataValidation(true)
-			dvGrade.Sqref = "E3:E1000"
+			dvGrade.Sqref = "F3:F1000"
 			_ = dvGrade.SetDropList(stageGrades)
 			_ = f.AddDataValidation(sheet, dvGrade)
 		}
 
-		// Track dropdown on Column F
+		// Track dropdown on Column G
 		dvTrack := excelize.NewDataValidation(true)
-		dvTrack.Sqref = "F3:F1000"
+		dvTrack.Sqref = "G3:G1000"
 		_ = dvTrack.SetDropList([]string{"عام", "تجاري", "فني صناعي", "زراعي", "سياحة وفنادق", "خدمات", "انتظار التنسيق"})
 		_ = f.AddDataValidation(sheet, dvTrack)
 	} else {
-		// Grade dropdown on Column E
+		// Grade dropdown on Column F
 		if len(stageGrades) > 0 {
 			dvGrade := excelize.NewDataValidation(true)
-			dvGrade.Sqref = "E3:E1000"
+			dvGrade.Sqref = "F3:F1000"
 			_ = dvGrade.SetDropList(stageGrades)
 			_ = f.AddDataValidation(sheet, dvGrade)
 		}

@@ -30,15 +30,17 @@ export function groupNeedsReviewRows(
 ): PendingGroup[] {
   const map = new Map<string, PendingGroup>();
   for (const r of rows) {
-    const key = r.groupKey || r.row.id;
-    const existing = map.get(key);
+    const stage = r.row.student.stage || 'غير محدد';
+    const rawKey = r.groupKey || r.row.id;
+    const mapKey = `${stage}::${rawKey}`;
+    const existing = map.get(mapKey);
     if (existing) {
       existing.rows.push({ id: r.id, row: r.row });
       continue;
     }
-    map.set(key, {
-      key,
-      stage: r.row.student.stage,
+    map.set(mapKey, {
+      key: rawKey,
+      stage: stage,
       rawGrade: r.row.rawGrade || r.groupKey,
       suggestion: r.suggestedValue,
       confidence: r.suggestionConfidence,

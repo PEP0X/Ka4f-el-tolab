@@ -1,36 +1,40 @@
 export interface Student {
   id: string;
-  familyHead?: string; // اسم رب الأسرة (اختياري)
-  fullName: string;
-  nationalId: string;
-  gender: string;
-  birthDate: string;
-  governorate: string;
-  phone: string;
-  parentPhone: string;
-  address: string;
-  stage: string; // e.g. حضانات (KG), ابتدائي, إعدادي, ثانوي, جامعة
-  grade: string; // e.g. الصف الأول, الصف الثاني
-  schoolName?: string; // اسم المدرسة (اختياري)
-  track?: string; // مسار الثانوية (عام، فني صناعي...)
+  fullName: string;            // أسم الطالب الرباعي (اجباري)
+  familyHead?: string;         // اسم رب الأسرة (اجباري)
+  nationalId: string;          // الرقم القومي 14 رقماً (اجباري)
+  gender: string;              // النوع (مستخرج آلياً من الرقم القومي)
+  birthDate: string;           // تاريخ الميلاد (مستخرج آلياً من الرقم القومي)
+  governorate: string;         // المحافظة (مستخرج آلياً من الرقم القومي)
+  stage: string;               // المرحلة الحالية (اجباري)
+  grade: string;               // الصف الدراسي الحالي (اجباري)
+  schoolName?: string;         // اسم المدرسة (اجباري للتعليم المدرسي)
+  track?: string;              // نوع / مسار الثانوية (اجباري للثانوي)
 
-  // University Fields (Conditional for 'جامعة')
-  universityName?: string;
-  faculty?: string;
-  studyYears?: string;
-  universityYear?: string;
+  // University Fields (Conditional for 'جامعة' - اجباري لمرحلة الجامعة)
+  universityName?: string;     // الجامعة / المعهد (اجباري للجامعة)
+  faculty?: string;            // الكلية / التخصص (اجباري للجامعة)
+  studyYears?: string;         // عدد سنين الدراسة (اختياري)
+  universityYear?: string;     // الفرقة الدراسية / الحالة (اجباري للجامعة)
 
-  // Care & Membership IDs
-  churchFamilyId?: string; // رقم الأسرة بكشوفات الكنيسة (اختياري)
-  cathedralStudentId: string; // إجباري
-  cathedralFamilyId: string;  // إجباري
-  alexandriaStudentId?: string; // اختياري
-  alexandriaFamilyId?: string;  // اختياري
+  // Communication & Address
+  parentPhone: string;         // هاتف ولي الأمر (اجباري)
+  phone: string;               // رقم التليفون (اختياري)
+  address: string;             // العنوان (اختياري)
 
-  // Photo & Status
-  photoPath?: string;
-  deaconStatus: boolean;
-  notes?: string;
+  // Church & Care IDs
+  churchFamilyId?: string;     // رقم الأسرة بكشوفات الكنيسة (اجباري)
+  cathedralFamilyId: string;   // رقم الأسرة في برنامج الرعاية الكنسية (اجباري)
+  cathedralStudentId?: string; // رقم الطالب في برنامج الرعاية الكنسية (اختياري)
+  alexandriaStudentID?: string; // رقم الطالب بالعضوية الكنسية (اختياري)
+  alexandriaStudentId?: string; // alias
+  alexandriaFamilyID?: string;  // رقم الأسرة بالعضوية الكنسية (اختياري)
+  alexandriaFamilyId?: string;  // alias
+
+  // Photo & Notes
+  photoPath?: string;          // صورة الطالب (اختياري)
+  notes?: string;              // ملاحظات إضافية (اختياري)
+  deaconStatus: boolean;       // حالة شماسية
   createdAt?: string;
   updatedAt?: string;
 }

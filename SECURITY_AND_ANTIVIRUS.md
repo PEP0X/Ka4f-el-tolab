@@ -49,10 +49,15 @@ pwsh -File .\scripts\allow-defender.ps1
 Add-MpPreference -ExclusionProcess "Ka4f-el-tolab.exe"
 ```
 
-### 2. البناء مع خيارات تقليل التحذيرات والتوقيع الرقمي:
+### 2. البناء مع التوقيع الرقمي والتوثيق المحلي بنقرة واحدة:
 تم إعداد ملفات الـ Manifest (`build/windows/wails.exe.manifest`) وبيانات الـ PE Metadata (`info.json`) لتعريف التطبيق كبرنامج حديث متوافق مع Windows 10/11 مع مستوى صلاحيات `asInvoker`.
 
-للبناء والتوقيع المحلي:
+لتوقيع التطبيق وتثبيت شهادة الناشر في مخزن الشهادات الموثوقة للتخلص نهائياً من رسالة (Publisher: Unknown):
+```powershell
+pwsh -File .\scripts\trust-app.ps1
+```
+
+للبناء والتوقيع الشامل:
 ```powershell
 pwsh -File .\scripts\build-windows.ps1 -Sign
 ```

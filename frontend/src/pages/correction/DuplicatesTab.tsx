@@ -1,4 +1,9 @@
-// "مكررات" tab — Dual-deck comparator for exact-NID matches and fuzzy-name matches.
+// ==============================================================================
+// Ka4f El-Tolab - "مكررات" (Duplicates) Power Workspace
+// ==============================================================================
+// Dual-deck comparator for exact-NID matches and fuzzy-name matches.
+// Features 1-click bulk automations (Auto-Merge Exact, Separate Fuzzy, Diff Highlighting).
+// ==============================================================================
 
 import React, { useMemo, useState } from 'react';
 import {
@@ -15,9 +20,23 @@ import {
   IconButton,
   Tooltip,
 } from '@mui/material';
-import { Check, AlertCircle, Link2, Ban, GitMerge, UserCheck, Copy, Sparkles } from 'lucide-react';
+import {
+  Check,
+  AlertCircle,
+  Link2,
+  Ban,
+  GitMerge,
+  UserCheck,
+  Copy,
+  Sparkles,
+  Zap,
+  Layers,
+  Users,
+  CheckCircle2,
+  ArrowLeftRight,
+} from 'lucide-react';
 import { useCorrectionStore, withLocalEdits } from '../../store/useCorrectionStore';
-import { CANONICAL_GRADES, mergeStudents, COMPARABLE_FIELDS, calculateStringSimilarity } from '../../lib/correction';
+import { CANONICAL_GRADES, mergeStudents, COMPARABLE_FIELDS, calculateStringSimilarity, diffStudents } from '../../lib/correction';
 import { inspectEgyptianNID } from '../../lib/nidInspector';
 import { matchQueryTokens } from '../../lib/normalization/arabic';
 import type { PendingImportRow, Student } from '../../types/student';
@@ -27,6 +46,8 @@ interface Props {
   search: string;
 }
 
+type DuplicateSubFilter = 'all' | 'exact' | 'fuzzy';
+
 interface DuplicateGroup {
   key: string;
   kind: 'exact_nid' | 'fuzzy_name';
@@ -34,15 +55,25 @@ interface DuplicateGroup {
 }
 
 export const DuplicatesTab: React.FC<Props> = ({ rows, search }) => {
-  const { bulkMergeExactDuplicates, isBulkResolving, setActiveTab } = useCorrectionStore();
-  const [mergingAll, setMergingAll] = useState(false);
+  const {
+    bulkMergeExactDuplicates,
+    bulkSeparateAllFuzzy,
+    isBulkResolving,
+    setActiveTab,
+  } = useCorrectionStore();
 
-  const filtered = useMemo(() => {
+  const [subFilter, setSubFilter] = useState<DuplicateSubFilter>('all');
+  const [mergingAll, setMergingAll] = useState(false);
+  const [separatingAll, setSeparatingAll] = useState(false);
+
+  // 1. Search Filter
+  const searchFiltered = useMemo(() => {
     if (!search.trim()) return rows;
     return rows.filter((r) => {
       const s = r.row.student;
       return matchQueryTokens(search, [
         s.fullName,
+        s.familyHead,
         s.nationalId,
         s.phone,
         s.parentPhone,
@@ -52,13 +83,26 @@ export const DuplicatesTab: React.FC<Props> = ({ rows, search }) => {
     });
   }, [rows, search]);
 
-  const groups = useMemo(() => groupDuplicates(filtered), [filtered]);
+  // 2. Group into duplicate pairs
+  const allGroups = useMemo(() => groupDuplicates(searchFiltered), [searchFiltered]);
+
+  // 3. Sub-filter application
+  const groups = useMemo(() => {
+    if (subFilter === 'all') return allGroups;
+    if (subFilter === 'exact') return allGroups.filter((g) => g.kind === 'exact_nid');
+    if (subFilter === 'fuzzy') return allGroups.filter((g) => g.kind === 'fuzzy_name');
+    return allGroups;
+  }, [allGroups, subFilter]);
 
   const exactMatchesCount = useMemo(() => {
-    return groups.filter((g) => g.kind === 'exact_nid').length;
-  }, [groups]);
+    return allGroups.filter((g) => g.kind === 'exact_nid').length;
+  }, [allGroups]);
 
-  const handleBulkMerge = async () => {
+  const fuzzyMatchesCount = useMemo(() => {
+    return allGroups.filter((g) => g.kind === 'fuzzy_name').length;
+  }, [allGroups]);
+
+  const handleBulkMergeExact = async () => {
     setMergingAll(true);
     try {
       await bulkMergeExactDuplicates();
@@ -67,13 +111,22 @@ export const DuplicatesTab: React.FC<Props> = ({ rows, search }) => {
     }
   };
 
-  if (!groups.length) {
+  const handleBulkSeparateFuzzy = async () => {
+    setSeparatingAll(true);
+    try {
+      await bulkSeparateAllFuzzy();
+    } finally {
+      setSeparatingAll(false);
+    }
+  };
+
+  if (!rows.length) {
     return (
       <Paper elevation={0} sx={{ textAlign: 'center', py: 8, px: 3, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#fff' }}>
         <Box
           sx={{
-            width: 76,
-            height: 76,
+            width: 80,
+            height: 80,
             borderRadius: '50%',
             bgcolor: '#ecfdf5',
             color: '#16a34a',
@@ -85,12 +138,12 @@ export const DuplicatesTab: React.FC<Props> = ({ rows, search }) => {
             boxShadow: '0 4px 16px rgba(22, 163, 74, 0.18)',
           }}
         >
-          <UserCheck size={42} />
+          <UserCheck size={44} />
         </Box>
         <Typography variant="h5" fontWeight={800} color="#0f172a">
-          🎉 تم حل ومعالجة كافة المكررات
+          🎉 تم حل ومعالجة كافة المكررات بنجاح!
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.8, maxWidth: 450, mx: 'auto' }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.8, maxWidth: 460, mx: 'auto' }}>
           لا توجد أي سجلات مكررة أو متطابقة في ملف الاستيراد حالياً.
         </Typography>
         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1.5, mt: 3.5 }}>
@@ -116,34 +169,87 @@ export const DuplicatesTab: React.FC<Props> = ({ rows, search }) => {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 0.5, flexWrap: 'wrap', gap: 1.5 }}>
-        <Typography variant="body2" color="text.secondary">
-          يقوم النظام بمقارنة الطلاب المكررين في الملف لتحديد السجل الصحيح أو دمج بياناتهما معاً.
-        </Typography>
+      {/* 1. TOP POWER TOOLBAR & 1-CLICK AUTOMATIONS */}
+      <Paper
+        elevation={0}
+        sx={{
+          p: 2,
+          borderRadius: 3,
+          border: '1px solid #e2e8f0',
+          bgcolor: '#ffffff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 2,
+        }}
+      >
+        {/* Sub-Filters */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+          <Chip
+            icon={<Layers size={14} />}
+            label={`كافة المكررات (${allGroups.length})`}
+            onClick={() => setSubFilter('all')}
+            variant={subFilter === 'all' ? 'filled' : 'outlined'}
+            color={subFilter === 'all' ? 'primary' : 'default'}
+            sx={{ fontWeight: 800, borderRadius: 2, cursor: 'pointer' }}
+          />
+          <Chip
+            icon={<GitMerge size={14} />}
+            label={`تطابق كامل في الرقم القومي (${exactMatchesCount})`}
+            onClick={() => setSubFilter('exact')}
+            variant={subFilter === 'exact' ? 'filled' : 'outlined'}
+            color={subFilter === 'exact' ? 'primary' : 'default'}
+            sx={{ fontWeight: 700, borderRadius: 2, cursor: 'pointer' }}
+          />
+          <Chip
+            icon={<Users size={14} />}
+            label={`تشابه في الاسم فقط (${fuzzyMatchesCount})`}
+            onClick={() => setSubFilter('fuzzy')}
+            variant={subFilter === 'fuzzy' ? 'filled' : 'outlined'}
+            color={subFilter === 'fuzzy' ? 'warning' : 'default'}
+            sx={{ fontWeight: 700, borderRadius: 2, cursor: 'pointer' }}
+          />
+        </Box>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        {/* 1-Click Fast Automations */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, flexWrap: 'wrap' }}>
           {exactMatchesCount > 0 && (
             <Button
               variant="contained"
               color="primary"
               size="small"
               disabled={mergingAll || isBulkResolving}
-              onClick={handleBulkMerge}
-              startIcon={<GitMerge size={15} />}
-              sx={{ fontWeight: 800, borderRadius: 2, boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)' }}
+              onClick={handleBulkMergeExact}
+              startIcon={<Zap size={15} />}
+              sx={{ fontWeight: 800, borderRadius: 2, px: 2, boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)' }}
             >
-              {mergingAll || isBulkResolving ? 'جارٍ الدمج...' : `⚡ دمج جميع المتطابقين بالرقم القومي (${exactMatchesCount} حالة)`}
+              {mergingAll ? 'جارٍ الدمج...' : `⚡ دمج ذكي لجميع المتطابقين بالرقم القومي (${exactMatchesCount})`}
             </Button>
           )}
-          <Typography variant="caption" fontWeight={700} color="#64748b">
-            {groups.length} حالة تكرار • {filtered.length} سجل
-          </Typography>
-        </Box>
-      </Box>
 
-      {groups.map((g) => (
-        <DuplicateCard key={g.key} group={g} />
-      ))}
+          {fuzzyMatchesCount > 0 && (
+            <Button
+              variant="contained"
+              color="success"
+              size="small"
+              disabled={separatingAll || isBulkResolving}
+              onClick={handleBulkSeparateFuzzy}
+              startIcon={<CheckCircle2 size={15} />}
+              sx={{ fontWeight: 800, borderRadius: 2, px: 2 }}
+            >
+              {separatingAll ? 'جارٍ الاستيراد...' : `اعتماد المتشابهين في الاسم كأشخاص منفصلين (${fuzzyMatchesCount})`}
+            </Button>
+          )}
+        </Box>
+      </Paper>
+
+      {/* 2. DUPLICATE CARDS LIST */}
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+        {groups.map((g) => (
+          <DuplicateCard key={g.key} group={g} />
+        ))}
+      </Box>
     </Box>
   );
 };
@@ -191,7 +297,7 @@ const DuplicateCard: React.FC<CardProps> = ({ group }) => {
   const effective = group.rows.map(withLocalEdits);
   const isExact = group.kind === 'exact_nid';
 
-  const [decision, setDecision] = useState<'merge' | 'separate' | 'ignore'>('merge');
+  const [decision, setDecision] = useState<'merge' | 'separate' | 'keep_a' | 'keep_b' | 'ignore'>('merge');
   const [winnerId, setWinnerId] = useState<string>(effective[0].id);
   const [choices, setChoices] = useState<Partial<Record<keyof Student, 'old' | 'new'>>>({});
   const [busy, setBusy] = useState(false);
@@ -209,6 +315,12 @@ const DuplicateCard: React.FC<CardProps> = ({ group }) => {
     return { ...result, id: winner.row.student.id || winner.id };
   }, [winner, otherRow, choices]);
 
+  // Compute field diffs between record A and record B
+  const diffs = useMemo(() => {
+    if (effective.length < 2) return [];
+    return diffStudents(effective[0].row.student, effective[1].row.student);
+  }, [effective]);
+
   // Inspect the winner's National ID
   const nidInspection = useMemo(() => {
     return inspectEgyptianNID(merged.nationalId || '', merged.stage);
@@ -222,6 +334,16 @@ const DuplicateCard: React.FC<CardProps> = ({ group }) => {
       if (decision === 'merge') {
         const loserIds = losers.map((l) => l.id);
         await resolveDuplicate(winner.id, loserIds, merged);
+      } else if (decision === 'keep_a') {
+        // Keep Record A and ignore Record B
+        await resolveRow(effective[0].id, effective[0].row.student);
+        for (let i = 1; i < effective.length; i++) {
+          await ignoreRow(effective[i].id);
+        }
+      } else if (decision === 'keep_b' && effective[1]) {
+        // Keep Record B and ignore Record A
+        await resolveRow(effective[1].id, effective[1].row.student);
+        await ignoreRow(effective[0].id);
       } else if (decision === 'separate') {
         for (const r of effective) {
           await resolveRow(r.id, r.row.student);
@@ -245,13 +367,15 @@ const DuplicateCard: React.FC<CardProps> = ({ group }) => {
       sx={{
         p: 3,
         borderRadius: 3,
-        border: '1px solid #bfdbfe',
+        border: '1px solid',
+        borderColor: isExact ? '#bfdbfe' : '#fde68a',
         bgcolor: '#ffffff',
-        boxShadow: '0 2px 12px rgba(37, 99, 235, 0.05)',
+        boxShadow: '0 2px 12px rgba(0,0,0,0.03)',
+        textAlign: 'start',
       }}
     >
       {/* Header Badge */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Chip
             icon={<GitMerge size={14} />}
@@ -271,9 +395,18 @@ const DuplicateCard: React.FC<CardProps> = ({ group }) => {
             />
           )}
           <Typography variant="body2" color="text.secondary">
-            {isExact ? `الرقم القومي: ${winner.row.student.nationalId}` : 'سجلان ببيانات متقاربة جداً'}
+            {isExact ? `الرقم القومي المشترك: ${winner.row.student.nationalId}` : 'سجلان ببيانات متقاربة جداً'}
           </Typography>
         </Box>
+
+        {diffs.length > 0 && (
+          <Chip
+            icon={<ArrowLeftRight size={13} />}
+            label={`${diffs.length} حقول مختلفة بين السجلين`}
+            size="small"
+            sx={{ bgcolor: '#f1f5f9', fontWeight: 700 }}
+          />
+        )}
       </Box>
 
       {/* Error / Validation Alert Banner */}
@@ -283,38 +416,8 @@ const DuplicateCard: React.FC<CardProps> = ({ group }) => {
         </Alert>
       )}
 
-      {/* Live NID Warning & Auto-Fix Banner */}
-      {!nidInspection.valid && nidInspection.errorReason && (
-        <Alert
-          severity="warning"
-          action={
-            nidInspection.suggestedId ? (
-              <Button
-                size="small"
-                color="warning"
-                variant="contained"
-                startIcon={<Sparkles size={14} />}
-                onClick={() => {
-                  const correctId = nidInspection.suggestedId!;
-                  for (const r of effective) {
-                    editRow(r.id, { nationalId: correctId });
-                  }
-                  setErrorMsg(null);
-                }}
-                sx={{ fontWeight: 800, fontSize: '0.76rem', borderRadius: 1.5, px: 1.5 }}
-              >
-                ⚡ تصحيح الرقم القومي إلى ({nidInspection.suggestedId})
-              </Button>
-            ) : null
-          }
-          sx={{ mb: 2, borderRadius: 2 }}
-        >
-          <strong>تنبيه في الرقم القومي:</strong> {nidInspection.errorReason}
-        </Alert>
-      )}
-
       {/* Dual Deck Visual Cards */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2, mb: 2.5 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2, mb: 2 }}>
         {effective.map((r, idx) => {
           const s = r.row.student;
           const isSelectedWinner = r.id === winnerId;
@@ -324,8 +427,8 @@ const DuplicateCard: React.FC<CardProps> = ({ group }) => {
               elevation={0}
               onClick={() => setWinnerId(r.id)}
               sx={{
-                p: 2,
-                borderRadius: 2,
+                p: 2.2,
+                borderRadius: 2.5,
                 border: '2px solid',
                 borderColor: isSelectedWinner ? '#2563eb' : '#e2e8f0',
                 bgcolor: isSelectedWinner ? '#eff6ff' : '#f8fafc',
@@ -334,7 +437,7 @@ const DuplicateCard: React.FC<CardProps> = ({ group }) => {
                 textAlign: 'start',
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
                 <Chip
                   label={`السجل ${idx === 0 ? 'الأول (أ)' : 'الثاني (ب)'}`}
                   size="small"
@@ -358,26 +461,61 @@ const DuplicateCard: React.FC<CardProps> = ({ group }) => {
               <Typography variant="subtitle1" fontWeight={800} color="#0f172a">
                 {s.fullName || '—'}
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace', my: 0.5 }}>
+              <Typography variant="body2" sx={{ fontFamily: 'monospace', my: 0.4, color: '#334155', fontWeight: 700 }}>
                 الرقم القومي: {s.nationalId || '—'}
               </Typography>
+              {s.familyHead && (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  رب الأسرة: {s.familyHead}
+                </Typography>
+              )}
               <Typography variant="caption" color="text.secondary" display="block">
-                الصف: {s.grade || '—'} • التليفون: {s.phone || '—'}
+                المرحلة والصف: {s.stage || '—'} • {s.grade || '—'} {s.schoolName ? `• ${s.schoolName}` : ''}
               </Typography>
               <Typography variant="caption" color="text.secondary" display="block">
-                رقم الرعاية: {s.cathedralStudentId || '—'} • العضوية: {s.alexandriaStudentId || '—'}
+                هاتف ولي الأمر: {s.parentPhone || '—'} {s.phone ? `• هاتف الطالب: ${s.phone}` : ''}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" display="block">
+                كشوفات الكنيسة: {s.churchFamilyId || '—'} • أسرة الرعاية: {s.cathedralFamilyId || '—'}
               </Typography>
             </Paper>
           );
         })}
       </Box>
 
-      {/* Decision Actions */}
+      {/* Field Differences Table (If any differences exist) */}
+      {diffs.length > 0 && (
+        <Box sx={{ mb: 2, p: 1.5, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0' }}>
+          <Typography variant="caption" fontWeight={800} color="#475569" sx={{ display: 'block', mb: 1 }}>
+            الفروق بين السجلين (عند الدمج سيتم جمع البيانات غير الفارغة تلقائياً):
+          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            {diffs.map((d) => (
+              <Box key={d.key} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8rem', bgcolor: '#fff', p: 0.6, px: 1, borderRadius: 1 }}>
+                <Typography variant="caption" fontWeight={700} color="#0f172a">
+                  {d.label}:
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="caption" color="#2563eb" sx={{ bgcolor: '#eff6ff', px: 0.8, py: 0.2, borderRadius: 1, fontWeight: 700 }}>
+                    (أ) {String(d.oldValue || 'فارغ')}
+                  </Typography>
+                  <ArrowLeftRight size={12} color="#94a3b8" />
+                  <Typography variant="caption" color="#7c3aed" sx={{ bgcolor: '#f5f3ff', px: 0.8, py: 0.2, borderRadius: 1, fontWeight: 700 }}>
+                    (ب) {String(d.newValue || 'فارغ')}
+                  </Typography>
+                </Box>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
+
+      {/* 1-Click Fast Decision Bar */}
       <Box
         sx={{
           p: 1.5,
           borderRadius: 2,
-          bgcolor: '#f8fafc',
+          bgcolor: '#f1f5f9',
           border: '1px solid #e2e8f0',
           display: 'flex',
           alignItems: 'center',
@@ -395,13 +533,25 @@ const DuplicateCard: React.FC<CardProps> = ({ group }) => {
           <FormControlLabel
             value="merge"
             control={<Radio size="small" />}
-            label={<Typography variant="body2" fontWeight={700}>دمج السجلين في طالب واحد</Typography>}
+            label={<Typography variant="body2" fontWeight={700}>دمج السجلين بذكاء</Typography>}
           />
+          <FormControlLabel
+            value="keep_a"
+            control={<Radio size="small" />}
+            label={<Typography variant="body2" fontWeight={700}>اعتماد (أ) فقط</Typography>}
+          />
+          {effective[1] && (
+            <FormControlLabel
+              value="keep_b"
+              control={<Radio size="small" />}
+              label={<Typography variant="body2" fontWeight={700}>اعتماد (ب) فقط</Typography>}
+            />
+          )}
           {!isExact && (
             <FormControlLabel
               value="separate"
               control={<Radio size="small" />}
-              label={<Typography variant="body2" fontWeight={700}>استيراد كلا الطالبين كشخصين مختلفين</Typography>}
+              label={<Typography variant="body2" fontWeight={700}>استيراد الاثنين كطالبين منفصلين</Typography>}
             />
           )}
           <FormControlLabel
@@ -421,7 +571,7 @@ const DuplicateCard: React.FC<CardProps> = ({ group }) => {
             fontWeight: 800,
             px: 3,
             borderRadius: 2,
-            boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)',
+            boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
           }}
         >
           {busy ? 'جارٍ المعالجة...' : 'تأكيد القرار'}

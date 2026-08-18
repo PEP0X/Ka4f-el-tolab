@@ -311,16 +311,35 @@ export const Dashboard: React.FC = () => {
       address: '',
     },
     onSubmit: async ({ value }) => {
-      if (!value.fullName || !value.nationalId || !value.cathedralStudentId || !value.cathedralFamilyId) {
+      const isUni = value.stage === 'جامعة';
+      const missingFields: string[] = [];
+
+      if (!value.fullName?.trim()) missingFields.push('أسم الطالب الرباعي');
+      if (!value.familyHead?.trim()) missingFields.push('اسم رب الأسرة');
+      if (!value.nationalId?.trim()) missingFields.push('الرقم القومي (14 رقماً)');
+      if (!value.stage?.trim()) missingFields.push('المرحلة الحالية');
+      if (isUni) {
+        if (!value.universityYear?.trim() && !value.grade?.trim()) missingFields.push('الفرقة الدراسية / الحالة');
+        if (!value.universityName?.trim() && !value.schoolName?.trim()) missingFields.push('الجامعة / المعهد');
+        if (!value.faculty?.trim()) missingFields.push('الكلية / التخصص');
+      } else {
+        if (!value.grade?.trim()) missingFields.push('الصف الدراسي الحالي');
+        if (!value.schoolName?.trim()) missingFields.push('اسم المدرسة');
+      }
+      if (!value.parentPhone?.trim()) missingFields.push('هاتف ولي الأمر');
+      if (!value.churchFamilyId?.trim()) missingFields.push('رقم الأسرة بكشوفات الكنيسة');
+      if (!value.cathedralFamilyId?.trim()) missingFields.push('رقم الأسرة في برنامج الرعاية الكنسية');
+
+      if (missingFields.length > 0) {
         setToastSeverity('error');
-        setToastMessage('يرجى كتابة كافة البيانات الإجبارية (الاسم الرباعي، الرقم القومي، وأكواد الكاتدرائية)');
+        setToastMessage(`يرجى كتابة كافة البيانات الإجبارية: ${missingFields.join('، ')}`);
         setToastOpen(true);
         return;
       }
 
-      if (value.nationalId.length !== 14 || parsedNIDInfo.valid === false) {
+      if (value.nationalId.replace(/[^\d٠-٩]/g, '').length !== 14 || parsedNIDInfo.valid === false) {
         setToastSeverity('error');
-        setToastMessage(parsedNIDInfo.error || 'الرقم القومي غير صحيح وفق محرك الفحص');
+        setToastMessage(parsedNIDInfo.error || 'الرقم القومي غير صحيح وفق محرك الفحص (يجب أن يتكون من 14 رقماً)');
         setToastOpen(true);
         return;
       }
@@ -2806,17 +2825,25 @@ export const Dashboard: React.FC = () => {
                   </Grid>
 
                   <Grid item xs={12} md={6}>
-                    <form.Field name="familyHead">
+                    <form.Field
+                      name="familyHead"
+                      validators={{
+                        onChange: ({ value }) => (!value?.trim() ? 'اسم رب الأسرة مطلوب' : undefined),
+                      }}
+                    >
                       {(field) => (
                         <>
-                          <FieldLabel>اسم رب الأسرة (اختياري)</FieldLabel>
+                          <FieldLabel required>اسم رب الأسرة</FieldLabel>
                           <TextField
                             fullWidth
+                            required
                             name={field.name}
                             value={field.state.value || ''}
                             onBlur={field.handleBlur}
                             onChange={(e) => field.handleChange(e.target.value)}
                             placeholder="اسم رب الأسرة / العائل"
+                            error={Boolean(field.state.meta.errors.length && field.state.meta.isTouched)}
+                            helperText={field.state.meta.isTouched ? field.state.meta.errors.join(', ') : undefined}
                             inputProps={{ style: { textAlign: 'start' } }}
                           />
                         </>
@@ -3018,15 +3045,24 @@ export const Dashboard: React.FC = () => {
                         </Grid>
 
                         <Grid item xs={12} sm={6} md={2.4}>
-                          <form.Field name="faculty">
+                          <form.Field
+                            name="faculty"
+                            validators={{
+                              onChange: ({ value }) => (!value?.trim() ? 'الكلية أو التخصص مطلوب' : undefined),
+                            }}
+                          >
                             {(field) => (
                               <>
                                 <FieldLabel required>الكلية / التخصص</FieldLabel>
                                 <TextField
                                   fullWidth
+                                  required
                                   placeholder="اسم الكلية أو التخصص"
                                   value={field.state.value || ''}
+                                  onBlur={field.handleBlur}
                                   onChange={(e) => field.handleChange(e.target.value)}
+                                  error={Boolean(field.state.meta.errors.length && field.state.meta.isTouched)}
+                                  helperText={field.state.meta.isTouched ? field.state.meta.errors.join(', ') : undefined}
                                   inputProps={{ style: { textAlign: 'start' } }}
                                 />
                               </>
@@ -3035,15 +3071,24 @@ export const Dashboard: React.FC = () => {
                         </Grid>
 
                         <Grid item xs={12} sm={6} md={2.4}>
-                          <form.Field name="universityName">
+                          <form.Field
+                            name="universityName"
+                            validators={{
+                              onChange: ({ value }) => (!value?.trim() ? 'اسم الجامعة أو المعهد مطلوب' : undefined),
+                            }}
+                          >
                             {(field) => (
                               <>
                                 <FieldLabel required>الجامعة / المعهد</FieldLabel>
                                 <TextField
                                   fullWidth
+                                  required
                                   placeholder="اسم الجامعة أو المعهد"
                                   value={field.state.value || ''}
+                                  onBlur={field.handleBlur}
                                   onChange={(e) => field.handleChange(e.target.value)}
+                                  error={Boolean(field.state.meta.errors.length && field.state.meta.isTouched)}
+                                  helperText={field.state.meta.isTouched ? field.state.meta.errors.join(', ') : undefined}
                                   inputProps={{ style: { textAlign: 'start' } }}
                                 />
                               </>
@@ -3055,7 +3100,7 @@ export const Dashboard: React.FC = () => {
                           <form.Field name="studyYears">
                             {(field) => (
                               <>
-                                <FieldLabel>عدد سنين الدراسة</FieldLabel>
+                                <FieldLabel>عدد سنين الدراسة (اختياري)</FieldLabel>
                                 <FormControl fullWidth size="small">
                                   <Select
                                     value={field.state.value || '4 سنوات (معظم الكليات)'}
@@ -3153,15 +3198,24 @@ export const Dashboard: React.FC = () => {
                         </Grid>
 
                         <Grid item xs={12} sm={6} md={3}>
-                          <form.Field name="schoolName">
+                          <form.Field
+                            name="schoolName"
+                            validators={{
+                              onChange: ({ value }) => (!value?.trim() ? 'اسم المدرسة مطلوب' : undefined),
+                            }}
+                          >
                             {(field) => (
                               <>
-                                <FieldLabel>اسم المدرسة (اختياري)</FieldLabel>
+                                <FieldLabel required>اسم المدرسة</FieldLabel>
                                 <TextField
                                   fullWidth
+                                  required
                                   placeholder="اسم المدرسة الثانوية"
                                   value={field.state.value || ''}
+                                  onBlur={field.handleBlur}
                                   onChange={(e) => field.handleChange(e.target.value)}
+                                  error={Boolean(field.state.meta.errors.length && field.state.meta.isTouched)}
+                                  helperText={field.state.meta.isTouched ? field.state.meta.errors.join(', ') : undefined}
                                   inputProps={{ style: { textAlign: 'start' } }}
                                 />
                               </>
@@ -3222,15 +3276,24 @@ export const Dashboard: React.FC = () => {
                         </Grid>
 
                         <Grid item xs={12} md={4}>
-                          <form.Field name="schoolName">
+                          <form.Field
+                            name="schoolName"
+                            validators={{
+                              onChange: ({ value }) => (!value?.trim() ? 'اسم المدرسة مطلوب' : undefined),
+                            }}
+                          >
                             {(field) => (
                               <>
-                                <FieldLabel>اسم المدرسة (اختياري)</FieldLabel>
+                                <FieldLabel required>اسم المدرسة</FieldLabel>
                                 <TextField
                                   fullWidth
+                                  required
                                   placeholder="اسم المدرسة أو الحضانة"
                                   value={field.state.value || ''}
+                                  onBlur={field.handleBlur}
                                   onChange={(e) => field.handleChange(e.target.value)}
+                                  error={Boolean(field.state.meta.errors.length && field.state.meta.isTouched)}
+                                  helperText={field.state.meta.isTouched ? field.state.meta.errors.join(', ') : undefined}
                                   inputProps={{ style: { textAlign: 'start' } }}
                                 />
                               </>
@@ -3276,15 +3339,24 @@ export const Dashboard: React.FC = () => {
                   </Grid>
 
                   <Grid item xs={12} sm={6} md={4}>
-                    <form.Field name="parentPhone">
+                    <form.Field
+                      name="parentPhone"
+                      validators={{
+                        onChange: ({ value }) => (!value?.trim() ? 'هاتف ولي الأمر مطلوب' : undefined),
+                      }}
+                    >
                       {(field) => (
                         <>
-                          <FieldLabel>هاتف ولي الأمر (اختياري)</FieldLabel>
+                          <FieldLabel required>هاتف ولي الأمر</FieldLabel>
                           <TextField
                             fullWidth
+                            required
                             value={field.state.value || ''}
+                            onBlur={field.handleBlur}
                             onChange={(e) => field.handleChange(e.target.value)}
                             placeholder="01xxxxxxxxx"
+                            error={Boolean(field.state.meta.errors.length && field.state.meta.isTouched)}
+                            helperText={field.state.meta.isTouched ? field.state.meta.errors.join(', ') : undefined}
                             inputProps={{ style: { textAlign: 'start', fontFamily: 'monospace' } }}
                           />
                         </>
@@ -3327,15 +3399,24 @@ export const Dashboard: React.FC = () => {
 
                 <Grid container spacing={2}>
                   <Grid item xs={12} sm={6} md={4}>
-                    <form.Field name="churchFamilyId">
+                    <form.Field
+                      name="churchFamilyId"
+                      validators={{
+                        onChange: ({ value }) => (!value?.trim() ? 'رقم الأسرة بكشوفات الكنيسة مطلوب' : undefined),
+                      }}
+                    >
                       {(field) => (
                         <>
-                          <FieldLabel>رقم الأسرة بكشوفات الكنيسة (اختياري)</FieldLabel>
+                          <FieldLabel required>رقم الأسرة بكشوفات الكنيسة</FieldLabel>
                           <TextField
                             fullWidth
+                            required
                             value={field.state.value || ''}
+                            onBlur={field.handleBlur}
                             onChange={(e) => field.handleChange(e.target.value)}
                             placeholder="رقم الأسرة بكشوفات الكنيسة"
+                            error={Boolean(field.state.meta.errors.length && field.state.meta.isTouched)}
+                            helperText={field.state.meta.isTouched ? field.state.meta.errors.join(', ') : undefined}
                             inputProps={{ style: { textAlign: 'start' } }}
                           />
                         </>
@@ -3344,23 +3425,15 @@ export const Dashboard: React.FC = () => {
                   </Grid>
 
                   <Grid item xs={12} sm={6} md={4}>
-                    <form.Field
-                      name="cathedralStudentId"
-                      validators={{
-                        onChange: ({ value }) => (!value ? 'رقم الطالب في برنامج الرعاية الكنسية مطلوب' : undefined),
-                      }}
-                    >
+                    <form.Field name="cathedralStudentId">
                       {(field) => (
                         <>
-                          <FieldLabel required>رقم الطالب في برنامج الرعاية الكنسية</FieldLabel>
+                          <FieldLabel>رقم الطالب في برنامج الرعاية الكنسية (اختياري)</FieldLabel>
                           <TextField
                             fullWidth
-                            required
                             value={field.state.value || ''}
                             onChange={(e) => field.handleChange(e.target.value)}
-                            placeholder="رقم الطالب في برنامج الرعاية"
-                            error={Boolean(field.state.meta.errors.length && field.state.meta.isTouched)}
-                            helperText={field.state.meta.isTouched ? field.state.meta.errors.join(', ') : undefined}
+                            placeholder="رقم الطالب في برنامج الرعاية (اختياري)"
                             inputProps={{ style: { textAlign: 'start' } }}
                           />
                         </>
@@ -3372,7 +3445,7 @@ export const Dashboard: React.FC = () => {
                     <form.Field
                       name="cathedralFamilyId"
                       validators={{
-                        onChange: ({ value }) => (!value ? 'رقم الأسرة في برنامج الرعاية الكنسية مطلوب' : undefined),
+                        onChange: ({ value }) => (!value?.trim() ? 'رقم الأسرة في برنامج الرعاية الكنسية مطلوب' : undefined),
                       }}
                     >
                       {(field) => (
@@ -3382,6 +3455,7 @@ export const Dashboard: React.FC = () => {
                             fullWidth
                             required
                             value={field.state.value || ''}
+                            onBlur={field.handleBlur}
                             onChange={(e) => field.handleChange(e.target.value)}
                             placeholder="رقم الأسرة في برنامج الرعاية"
                             error={Boolean(field.state.meta.errors.length && field.state.meta.isTouched)}
